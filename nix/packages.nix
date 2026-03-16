@@ -42,16 +42,17 @@
           mkdir -p $out/share/hermes-agent
           cp -r ${mini-swe-agent-src}/src/minisweagent $out/share/hermes-agent/minisweagent
           cp -r ${tinker-atropos-src} $out/share/hermes-agent/tinker-atropos
+          cp ${../minisweagent_path.py} $out/share/hermes-agent/minisweagent_path.py
 
           # Wrap entry points from the uv2nix venv
           mkdir -p $out/bin
           makeWrapper ${hermesVenv}/bin/hermes $out/bin/hermes \
             --prefix PATH : "${runtimePath}" \
-            --prefix PYTHONPATH : $out/share/hermes-agent
+            --prefix PYTHONPATH : "$out/share/hermes-agent:$out/share/hermes-agent/minisweagent_path"
 
           makeWrapper ${hermesVenv}/bin/hermes-agent $out/bin/hermes-agent \
             --prefix PATH : "${runtimePath}" \
-            --prefix PYTHONPATH : $out/share/hermes-agent
+            --prefix PYTHONPATH : "$out/share/hermes-agent:$out/share/hermes-agent/minisweagent_path"
 
           runHook postInstall
         '';
