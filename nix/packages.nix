@@ -14,10 +14,20 @@
       };
 
       runtimeDeps = with pkgs; [
-        nodejs_20 ripgrep git openssh ffmpeg
+        nodejs_20
+        ripgrep
+        git
+        openssh
+        ffmpeg
+        portaudio
       ];
 
       runtimePath = pkgs.lib.makeBinPath runtimeDeps;
+
+      # Add lib directories for packages that need them at runtime
+      # (e.g., portaudio's .so files)
+      libPaths = [ "${pkgs.portaudio}/lib" ];
+      libPathStr = pkgs.lib.concatStringsSep ":" libPaths;
     in {
       packages.default = pkgs.stdenv.mkDerivation {
         pname = "hermes-agent";
@@ -36,6 +46,7 @@
           ${pkgs.lib.concatMapStringsSep "\n" (name: ''
             makeWrapper ${hermesVenv}/bin/${name} $out/bin/${name} \
               --suffix PATH : "${runtimePath}" \
+              --suffix LD_LIBRARY_PATH : "${libPathStr}" \
               --set HERMES_BUNDLED_SKILLS $out/share/hermes-agent/skills
           '') [ "hermes" "hermes-agent" "hermes-acp" ]}
 
