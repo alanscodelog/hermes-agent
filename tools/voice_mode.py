@@ -1755,9 +1755,12 @@ def _play_audio_file_impl(file_path: str) -> bool:
             except Exception:
                 pass  # WSL path resolution failed; fall through to ffplay/aplay
 
-    players.append(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path])
+
     if system == "Linux":
+        players.append(["paplay", file_path])
         players.append(["aplay", "-q", file_path])
+    else:
+        players.append(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path])
 
     for cmd in players:
         exe = shutil.which(cmd[0])
