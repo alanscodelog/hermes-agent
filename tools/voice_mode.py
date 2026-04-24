@@ -1044,12 +1044,15 @@ def _wsl_powershell_player_cmd(file_path: str) -> Optional[List[str]]:
 def _system_player_candidates(file_path: str) -> List[List[str]]:
     """Ordered system-player commands for this platform."""
     system = platform.system()
-    players: List[List[str]] = [["afplay", file_path]] if system == "Darwin" else []
-    ps_cmd = _wsl_powershell_player_cmd(file_path) if system == "Linux" else None
-    if ps_cmd:
-        players.append(ps_cmd)
+    players = []
+
+    if system == "Darwin":
+        players.append(["afplay", file_path])
+
+
     players.append(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path])
     if system == "Linux":
+        players.append(["paplay", file_path])
         players.append(["aplay", "-q", file_path])
     return players
 
