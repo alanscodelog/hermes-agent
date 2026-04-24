@@ -888,9 +888,14 @@ def play_audio_file(file_path: str) -> bool:
 
     if system == "Darwin":
         players.append(["afplay", file_path])
-    players.append(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path])
+    # On Linux with PulseAudio/PipeWire, paplay is the reliable player.
+    # ffplay defaults to ALSA which silently drops audio on systems without
+    # an ALSA config (NixOS, minimal setups). paplay always routes through
+    # PulseAudio/PipeWire correctly.
     if system == "Linux":
+        players.append(["paplay", file_path])
         players.append(["aplay", "-q", file_path])
+    players.append(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path])
 
     for cmd in players:
         exe = shutil.which(cmd[0])
