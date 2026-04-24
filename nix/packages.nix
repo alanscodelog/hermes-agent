@@ -33,6 +33,7 @@
         openssh
         ffmpeg
         tirith
+        portaudio
       ];
 
       runtimePath = pkgs.lib.makeBinPath runtimeDeps;
@@ -44,6 +45,10 @@
           builtins.hashString "sha256" (builtins.readFile ../uv.lock)
         else
           "none";
+      # Add lib directories for packages that need them at runtime
+      # (e.g., portaudio's .so files)
+      libPaths = [ "${pkgs.portaudio}/lib" ];
+      libPathStr = pkgs.lib.concatStringsSep ":" libPaths;
     in
     {
       packages = {
@@ -70,6 +75,7 @@
               (name: ''
                 makeWrapper ${hermesVenv}/bin/${name} $out/bin/${name} \
                   --suffix PATH : "${runtimePath}" \
+                  --suffix LD_LIBRARY_PATH : "${libPathStr}" \
                   --set HERMES_BUNDLED_SKILLS $out/share/hermes-agent/skills \
                   --set HERMES_WEB_DIST $out/share/hermes-agent/web_dist \
                   --set HERMES_TUI_DIR $out/ui-tui \
