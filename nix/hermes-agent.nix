@@ -30,6 +30,7 @@
   pyproject-build-systems,
   npm-lockfile-fix,
   # Locked git revision of the flake source — embedded so banner.py can
+  portaudio,
   # check for updates without needing a local .git directory. Null for
   # impure / dirty builds where flakes can't determine a rev.
   rev ? null,
@@ -154,7 +155,11 @@ let
   ++ lib.optionals stdenv.isLinux [
     wl-clipboard
     xclip
+    portaudio
   ];
+
+  libPaths = [ "${portaudio}/lib" ];
+  libPathStr = lib.concatStringsSep ":" libPaths;
 
   runtimePath = lib.makeBinPath runtimeDeps;
 
@@ -274,6 +279,7 @@ stdenv.mkDerivation (finalAttrs: {
       shift 2
       makeWrapper "$source" "$out/$destination" "$@" \
         --suffix PATH : "${runtimePath}" \
+        --suffix LD_LIBRARY_PATH : "${libPathStr}" \
         --set-default HERMES_BIN "$out/bin/hermes"${
           lib.optionalString (extraPythonPackages != [ ])
             " \\\n        --suffix PYTHONPATH : \"${pythonPath}\""
