@@ -6025,6 +6025,100 @@ class HermesCLI:
         except Exception as e:
             _cprint(f"  Clipboard copy failed: {e}")
 
+    def _write_text_clipboard(self, text: str) -> None:
+        """Copy text to clipboard via subprocess (wl-copy/xclip/pbcopy), falling back to OSC 52."""
+        import subprocess
+
+        # Build ordered list of native clipboard backends.
+        # Order matters: prefer the platform-native tool for the current session.
+        native_cmds = []
+        if os.environ.get("WAYLAND_DISPLAY"):
+            native_cmds.append(["wl-copy", "--type", "text/plain"])
+        if os.environ.get("XDG_SESSION_TYPE") == "x11" or os.environ.get("DISPLAY"):
+            native_cmds.append(["xclip", "-selection", "clipboard"])
+            native_cmds.append(["xsel", "--clipboard", "--input"])
+        if sys.platform == "darwin":
+            native_cmds.append(["pbcopy"])
+
+        for cmd in native_cmds:
+            try:
+                subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True, timeout=5)
+                return
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                continue
+
+        # Fallback to OSC 52
+        self._write_osc52_clipboard(text)
+
+    def _handle_dump_command(self, cmd_original: str) -> None:
+        """Handle /dump — copy the full conversation context (system prompt + messages) to clipboard."""
+        if not self.agent:
+            _cprint("  No active session to dump.")
+            return
+
+        parts = []
+
+        # System prompt
+        system_prompt = self.agent._cached_system_prompt
+        if not system_prompt:
+            # Rebuild it if not cached
+            system_prompt = self.agent._build_system_prompt()
+
+        parts.append(f"=== SYSTEM PROMPT ===\n{system_prompt}\n")
+
+        # Conversation messages
+        if self.conversation_history:
+            parts.append(f"=== CONVERSATION ({len(self.conversation_history)} messages) ===\n")
+            for i, msg in enumerate(self.conversation_history):
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    # Multimodal content — extract text parts
+                    text_parts = []
+                    for part in content:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                        elif isinstance(part, str):
+                            text_parts.append(part)
+                    content = "\n".join(p for p in text_parts if p)
+                elif not isinstance(content, str):
+                    content = str(content)
+
+                # Truncate very long content for the dump
+                if len(content) > 4000:
+                    content = content[:4000] + f"\n...[{len(content) - 4000} more chars]"
+
+                tool_name = msg.get("tool_calls", [{}])[0].get("function", {}).get("name", "") if isinstance(msg.get("tool_calls"), list) and msg.get("tool_calls") else ""
+                tool_result = msg.get("tool_call_id", "") if "tool_call_id" in msg else ""
+
+                line = f"[{i}] role:{role}"
+                if tool_name:
+                    line += f" tool:{tool_name}"
+                if tool_result:
+                    line += f" tool_call_id:{tool_result}"
+                parts.append(f"{line}\n{content}\n")
+        else:
+            parts.append("=== CONVERSATION (empty) ===\n")
+
+        # Session info
+        session_info = f"=== SESSION INFO ===\n"
+        session_info += f"Session ID: {self.agent.session_id}\n"
+        session_info += f"Model: {self.agent.model}\n"
+        session_info += f"Provider: {self.agent.provider}\n"
+        session_info += f"Platform: {self.agent.platform}\n"
+        if hasattr(self.agent, 'context_compressor') and self.agent.context_compressor:
+            session_info += f"Compression count: {self.agent.context_compressor.compression_count}\n"
+            session_info += f"Context length: {self.agent.context_compressor.context_length}\n"
+        parts.append(session_info)
+
+        dump_text = "\n".join(parts)
+
+        try:
+            self._write_text_clipboard(dump_text)
+            _cprint(f"  Dumped context ({len(dump_text):,} chars) to clipboard")
+        except Exception as e:
+            _cprint(f"  Clipboard write failed: {e}")
+
     def _handle_image_command(self, cmd_original: str):
         """Handle /image <path> — attach a local image file for the next prompt."""
         raw_args = (cmd_original.split(None, 1)[1].strip() if " " in cmd_original else "")
@@ -8992,6 +9086,8 @@ class HermesCLI:
             self._show_insights(cmd_original)
         elif canonical == "copy":
             self._handle_copy_command(cmd_original)
+        elif canonical == "dump":
+            self._handle_dump_command(cmd_original)
         elif canonical == "debug":
             self._handle_debug_command()
         elif canonical == "update":
