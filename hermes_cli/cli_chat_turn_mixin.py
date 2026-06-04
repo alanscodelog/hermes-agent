@@ -69,6 +69,11 @@ class CLIChatTurnMixin:
         if isinstance(message, SubagentNotification):
             message = str(message)  # UI metadata is on the staged row, never in model content.
 
+        # Apply trigger phrases (phrases -> instructions appended,
+        # replacements -> text substituted in place)
+        from cli import _apply_trigger_phrases, CLI_CONFIG
+        message = _apply_trigger_phrases(message, CLI_CONFIG)
+
         ChatConsole().print(f"[{_accent_hex()}]{'─' * 40}[/]")
         print(flush=True)
 

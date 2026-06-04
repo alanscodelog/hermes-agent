@@ -254,6 +254,25 @@ DEFAULT_CONFIG = {
         # timeout_s <= 0 disables; poll_s = sampling interval. Invalid values (NaN, Inf,
         # non-positive poll) warn and fall back to defaults. See agent/turn_liveness.py.
         "turn_liveness": {"timeout_s": 600.0, "poll_s": 15.0},
+        # Trigger phrases: detect phrases in user messages and inject
+        # instructions or replacements before the message reaches the agent.
+        #
+        # Structure:
+        #   agent:
+        #     triggerPhrases:
+        #       instructions: "The user used a trigger phrase to indicate you should follow the following instructions:"  # override default prefix
+        #       phrases:
+        #         "review my code": "Review the code above for bugs, performance issues, and style. Be thorough."
+        #         "explain": "Explain what the code does step by step in simple terms."
+        #       replacements:
+        #         "tl;dr": "Please give me a concise summary."
+        #         "roast": "Critique the above harshly and honestly."
+        #
+        # "phrases" — if the user message contains the key (case-sensitive), the
+        # value is appended to the message with the instructions prefix.
+        # "replacements" — if the user message contains the key, it is replaced
+        # with the value verbatim; no instructions prefix is appended.
+        "triggerPhrases": {},
     },
 
     "terminal": {
