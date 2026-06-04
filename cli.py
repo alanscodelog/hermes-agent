@@ -6111,6 +6111,19 @@ class HermesCLI:
             session_info += f"Context length: {self.agent.context_compressor.context_length}\n"
         parts.append(session_info)
 
+        # Tools currently in context
+        if self.agent.tools:
+            tool_names = sorted(
+                t["function"]["name"]
+                for t in self.agent.tools
+                if isinstance(t, dict) and "function" in t
+            )
+            tools_info = f"=== TOOLS ({len(tool_names)}) ===\n"
+            tools_info += ", ".join(tool_names) + "\n"
+            parts.append(tools_info)
+        else:
+            parts.append("=== TOOLS (none) ===\n")
+
         dump_text = "\n".join(parts)
 
         try:
