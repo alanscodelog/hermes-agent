@@ -334,6 +334,54 @@ def _assistant_copy_text(content: Any) -> str:
     return _strip_reasoning_tags(_assistant_content_as_text(content))
 
 
+_TRIGGER_INSTRUCTIONS_PREFIX = (
+    "The user used a trigger phrase to indicate you should follow the following instructions:"
+)
+
+
+def _apply_trigger_phrases(message: str, config: Dict[str, Any]) -> str:
+    """Apply trigger phrase rules to a user message before it reaches the agent.
+
+    Reads ``agent.triggerPhrases`` from *config*. Returns the (possibly modified)
+    message string.  Only operates on plain-string messages — multimodal content
+    lists are returned unchanged.
+
+    ``phrases`` — if the message contains the key (case-sensitive substring), the
+    corresponding instruction value is appended with the instructions prefix.
+
+    ``replacements`` — if the message contains the key, it is replaced with the
+    value verbatim; no instructions prefix is appended.
+    """
+    if not isinstance(message, str):
+        return message
+
+    tp = config.get("agent", {}).get("triggerPhrases", {})
+    if not tp:
+        return message
+
+    instructions_prefix = tp.get("instructions", _TRIGGER_INSTRUCTIONS_PREFIX)
+    phrases = tp.get("phrases", {})
+    replacements = tp.get("replacements", {})
+
+    # Apply replacements first (they may remove trigger phrases from the text)
+    for phrase, replacement in replacements.items():
+        if phrase in message:
+            message = message.replace(phrase, replacement)
+
+    # Collect instructions from matching phrases
+    appended = []
+    for phrase, instruction in phrases.items():
+        if phrase in message:
+            appended.append(instruction)
+
+    if appended:
+        message = message + "\n\n" + "\n\n".join(
+            instructions_prefix + " " + inst for inst in appended
+        )
+
+    return message
+
+
 # =============================================================================
 # Configuration Loading
 # =============================================================================
@@ -16844,6 +16892,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             with persist_lock:
                 _stage_user_message()
 
+        # Apply trigger phrases (phrases -> instructions appended,
+        # replacements -> text substituted in place)
+        message = _apply_trigger_phrases(message, CLI_CONFIG)
+
         ChatConsole().print(f"[{_accent_hex()}]{'─' * 40}[/]")
         print(flush=True)
         
@@ -20913,6 +20965,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     paste_refs = list(_paste_ref_re.finditer(user_input)) if isinstance(user_input, str) else []
                     if paste_refs:
                         user_input = self._expand_paste_references(user_input)
+
+                    # Apply trigger phrases before preview so the displayed text
+                    # matches what the model actually receives.
+                    if isinstance(user_input, str):
+                        user_input = _apply_trigger_phrases(user_input, CLI_CONFIG)
+
                     print()
                     self._print_user_message_preview(user_input)
                     
