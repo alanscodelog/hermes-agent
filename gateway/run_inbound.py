@@ -1739,6 +1739,16 @@ class GatewayInboundMixin:
         rehome_inbound_media(event)  # before any consumer (vision, STT, document notes) reads media_urls
         _pending_stt_prepared = hasattr(event, "_gateway_pending_stt_text")
         message_text = (event._gateway_pending_stt_text if _pending_stt_prepared else event.text) or ""
+
+        # Apply trigger phrases (phrases -> instructions appended,
+        # replacements -> text substituted in place)
+        try:
+            from cli import _apply_trigger_phrases as _apply_tp
+            from hermes_cli.config import load_config as _load_full_config
+            message_text = _apply_tp(message_text, _load_full_config())
+        except Exception:
+            pass  # Silently skip on import/config failure
+
         # Prefer the caller's resolved session key so this write key matches the consume key at the
         # run_conversation site; derive it here only for tests and legacy standalone callers.
         session_key = session_key or self._session_key_for_source(source)
