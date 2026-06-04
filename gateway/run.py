@@ -8555,6 +8555,16 @@ class GatewayRunner:
         """
         history = history or []
         message_text = event.text or ""
+
+        # Apply trigger phrases (phrases -> instructions appended,
+        # replacements -> text substituted in place)
+        try:
+            from cli import _apply_trigger_phrases as _apply_tp
+            from hermes_cli.config import load_config as _load_full_config
+            message_text = _apply_tp(message_text, _load_full_config())
+        except Exception:
+            pass  # Silently skip on import/config failure
+
         _group_sessions_per_user = getattr(self.config, "group_sessions_per_user", True)
         _thread_sessions_per_user = getattr(self.config, "thread_sessions_per_user", False)
         # Use the same helper every other call site uses so the write key here
