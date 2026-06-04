@@ -10831,12 +10831,22 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 pass
 
             # Track consecutive no-speech cycles to avoid infinite restart loops.
+            # Configurable via voice.silence_retries (default 3).
             if not submitted:
                 self._no_speech_count = getattr(self, '_no_speech_count', 0) + 1
-                if self._no_speech_count >= 3:
+                _silence_retries = 3
+                try:
+                    _vc = load_config().get("voice")
+                    if isinstance(_vc, dict):
+                        _sr = _vc.get("silence_retries")
+                        if isinstance(_sr, int) and _sr > 0:
+                            _silence_retries = _sr
+                except Exception:
+                    pass
+                if self._no_speech_count >= _silence_retries:
                     self._voice_continuous = False
                     self._no_speech_count = 0
-                    _cprint(f"{_DIM}No speech detected 3 times, continuous mode stopped.{_RST}")
+                    _cprint(f"{_DIM}No speech detected {_silence_retries} times, continuous mode stopped.{_RST}")
                     return
             else:
                 self._no_speech_count = 0
@@ -10845,15 +10855,27 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # restart recording so the user can keep talking.
             # (When transcript IS submitted, process_loop handles restart
             # after chat() completes.)
+            # Only restart if we haven't exhausted silence retries — prevents
+            # the infinite restart loop when silence is detected repeatedly.
             if self._voice_continuous and not submitted and not self._voice_recording:
-                def _restart_recording():
-                    try:
-                        self._voice_start_recording()
-                        if hasattr(self, '_app') and self._app:
-                            self._app.invalidate()
-                    except Exception as e:
-                        _cprint(f"{_DIM}Voice auto-restart failed: {e}{_RST}")
-                threading.Thread(target=_restart_recording, daemon=True).start()
+                _silence_retries_for_restart = 3
+                try:
+                    _vc2 = load_config().get("voice")
+                    if isinstance(_vc2, dict):
+                        _sr2 = _vc2.get("silence_retries")
+                        if isinstance(_sr2, int) and _sr2 > 0:
+                            _silence_retries_for_restart = _sr2
+                except Exception:
+                    pass
+                if self._no_speech_count < _silence_retries_for_restart - 1:
+                    def _restart_recording():
+                        try:
+                            self._voice_start_recording()
+                            if hasattr(self, '_app') and self._app:
+                                self._app.invalidate()
+                        except Exception as e:
+                            _cprint(f"{_DIM}Voice auto-restart failed: {e}{_RST}")
+                    threading.Thread(target=_restart_recording, daemon=True).start()
 
     def _voice_speak_response_async(self, text: str) -> None:
         """Schedule TTS and mark it pending before continuous recording can restart."""
@@ -13718,8 +13740,18 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     except Exception:
                         pass
 
+                # Only enable continuous mode if voice.auto_continuous is True (default).
+                # When False, each press records a single turn (push-to-talk).
+                _voice_auto_continuous = True
+                try:
+                    from hermes_cli.config import load_config
+                    _vc = load_config().get("voice")
+                    if isinstance(_vc, dict):
+                        _voice_auto_continuous = bool(_vc.get("auto_continuous", True))
+                except Exception:
+                    pass
                 with cli_ref._voice_lock:
-                    cli_ref._voice_continuous = True
+                    cli_ref._voice_continuous = _voice_auto_continuous
 
                 # Dispatch to a daemon thread so play_beep(sd.wait),
                 # AudioRecorder.start(lock acquire), and config I/O
