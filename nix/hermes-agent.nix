@@ -107,6 +107,8 @@ let
     wl-clipboard
     xclip
     portaudio
+    python312.pkgs.sounddevice
+    python312.pkgs.numpy
   ];
 
   libPaths = [ "${portaudio}/lib" ];
