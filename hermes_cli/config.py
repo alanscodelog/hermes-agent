@@ -1633,7 +1633,8 @@ DEFAULT_CONFIG = {
         "record_key": "ctrl+b",
         "max_recording_seconds": 120,
         "auto_tts": False,
-        "auto_continuous": True,      # Auto-restart recording after each turn (set False for push-to-talk only)
+        "auto_continuous": True,      # Auto-restart recording after each turn (set False for single-turn)
+        "hold_to_talk": False,        # Hold key to record, release to stop (no VAD silence detection)
         "beep_enabled": True,         # Play record start/stop beeps in CLI voice mode
         "silence_threshold": 200,     # RMS below this = silence (0-32767)
         "silence_duration": 3.0,      # Seconds of silence before auto-stop
@@ -2403,7 +2404,7 @@ DEFAULT_CONFIG = {
 
 
     # Config schema version - bump this when adding new required fields
-    "_config_version": 26,
+    "_config_version": 27,
 }
 
 # =============================================================================

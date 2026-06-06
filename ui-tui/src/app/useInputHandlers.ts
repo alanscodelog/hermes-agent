@@ -221,9 +221,37 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   // transcribe -> idle), a subsequent press stops and transcribes it.
   // The gateway publishes voice.status + voice.transcript events that
   // createGatewayEventHandler turns into UI badges and composer injection.
+  // Release-debounce timer for hold-to-talk: when the user holds the record
+  // key, repeated keypress events fire (~30-50ms apart). Each event resets
+  // this timer. When the key is released, events stop, and after 500ms the
+  // timer fires → stop recording and transcribe.
+  const HOLD_RELEASE_DEBOUNCE_MS = 500
+  const holdReleaseTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
+
   const voiceRecordToggle = () => {
     if (!voice.enabled) {
       return actions.sys('voice: mode is off — enable with /voice on')
+    }
+
+    // Hold-to-talk: every keypress resets the release timer.
+    // First press starts recording; subsequent presses while recording
+    // just reset the timer (still holding). Timer fires → stop.
+    if (voice.holdToTalk && voice.recording) {
+      // Still holding — reset the release timer
+      clearTimeout(holdReleaseTimer.current ?? undefined)
+      holdReleaseTimer.current = setTimeout(() => {
+        holdReleaseTimer.current = null
+        // Key was released — stop recording
+        voice.setRecording(false)
+        voice.setProcessing(false)
+        gateway
+          .rpc<VoiceRecordResponse>('voice.record', { action: 'stop', session_id: getUiState().sid })
+          .catch((e: Error) => {
+            actions.sys(`voice error: ${e.message}`)
+          })
+      }, HOLD_RELEASE_DEBOUNCE_MS)
+
+      return
     }
 
     const starting = !voice.recording

@@ -85,6 +85,7 @@ export interface ConfigDisplayConfig {
 export interface ConfigVoiceConfig {
   // Raw `yaml.safe_load()` value from config; may be non-string if hand-edited.
   // Callers must normalize/validate at runtime (parseVoiceRecordKey()).
+  hold_to_talk?: unknown
   record_key?: unknown
 }
 
@@ -338,14 +339,17 @@ export interface VoiceToggleResponse {
   available?: boolean
   details?: string
   enabled?: boolean
+  hold_to_talk?: boolean
   record_key?: string
   stt_available?: boolean
   tts?: boolean
 }
 
 export interface VoiceRecordResponse {
+  hold_to_talk?: boolean
   status?: 'busy' | 'recording' | 'stopped'
   text?: string
+  transcript?: string
 }
 
 // ── Tools (TS keeps configure since it resets local history) ─────────

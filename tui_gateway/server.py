@@ -7151,17 +7151,19 @@ def _voice_tts_enabled() -> bool:
 
 
 def _voice_cfg_dict() -> dict:
-    """Shape-safe accessor for the ``voice:`` block in config.yaml.
+    """Shape-safe accessor for the ``voice:`` block using merged config.
 
-    ``_load_cfg()`` returns raw ``yaml.safe_load()`` output, so both the
-    root AND ``voice`` may be any YAML scalar / list / None. A hand-edit
-    like ``voice: true`` or a malformed top-level config that parses to
-    a scalar would otherwise break ``.get("…")`` and take every
-    ``voice.*`` branch down with it (Copilot round-3..7 review on
-    #19835). Coerce through ``isinstance`` at every level so malformed
-    config falls back to an empty dict instead of crashing /voice.
+    Uses ``hermes_cli.config.load_config()`` which merges user YAML with
+    DEFAULT_CONFIG — so new keys like ``hold_to_talk`` are present even
+    when the user hasn't added them to their config.yaml yet. The old
+    ``_load_cfg()`` path only read raw YAML and missed merged defaults.
     """
-    cfg = _load_cfg()
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config()
+    except Exception:
+        cfg = _load_cfg()
     voice_cfg = cfg.get("voice") if isinstance(cfg, dict) else None
 
     return voice_cfg if isinstance(voice_cfg, dict) else {}
@@ -7198,11 +7200,15 @@ def _(rid, params: dict) -> dict:
         # TUI can both bind it (frontend ``isVoiceToggleKey``) and display
         # it in /voice status — previously the TUI hardcoded Ctrl+B and
         # ignored the config (#18994).
+        voice_cfg = _voice_cfg_dict()
         payload: dict = {
             "enabled": _voice_mode_enabled(),
             "record_key": _voice_record_key(),
             "tts": _voice_tts_enabled(),
+            "hold_to_talk": bool(voice_cfg.get("hold_to_talk", False)),
         }
+        logger.info("voice.toggle status: enabled=%s, hold_to_talk=%s, tts=%s, voice_cfg=%r",
+                     payload["enabled"], payload["hold_to_talk"], payload["tts"], voice_cfg)
         try:
             from tools.voice_mode import check_voice_requirements
 
@@ -7295,6 +7301,22 @@ def _(rid, params: dict) -> dict:
                 global _voice_event_sid
                 _voice_event_sid = params.get("session_id") or _voice_event_sid
 
+            voice_cfg = _voice_cfg_dict()
+            hold_to_talk = bool(voice_cfg.get("hold_to_talk", False))
+            logger.info("voice.record start: hold_to_talk=%s, voice_cfg=%r", hold_to_talk, voice_cfg)
+
+            if hold_to_talk:
+                # Hold-to-talk: raw recording, no VAD, no silence detection.
+                # Frontend detects key release via repeat-event debounce timer.
+                from hermes_cli.voice import start_recording
+
+                started = start_recording()
+                if started is False:
+                    return _ok(rid, {"status": "busy"})
+                return _ok(rid, {"status": "recording", "hold_to_talk": True})
+
+            # Normal VAD mode (existing path)
+            logger.info("voice.record start: using VAD continuous mode")
             from hermes_cli.voice import start_continuous
 
             # Shape-safe lookups: malformed ``voice:`` YAML (bool/scalar/list)
@@ -7304,7 +7326,6 @@ def _(rid, params: dict) -> dict:
             # a subclass of int — a hand-edit like ``silence_threshold: true``
             # would otherwise forward as ``1`` instead of falling back to
             # the documented 200 / 3.0 defaults (Copilot round-12 on #19835).
-            voice_cfg = _voice_cfg_dict()
             threshold = voice_cfg.get("silence_threshold")
             duration = voice_cfg.get("silence_duration")
             safe_threshold = (
@@ -7336,10 +7357,23 @@ def _(rid, params: dict) -> dict:
         with _voice_sid_lock:
             _voice_event_sid = params.get("session_id") or _voice_event_sid
 
-        from hermes_cli.voice import stop_continuous
+        voice_cfg = _voice_cfg_dict()
+        hold_to_talk = bool(voice_cfg.get("hold_to_talk", False))
+        logger.info("voice.record stop: hold_to_talk=%s, voice_cfg=%r", hold_to_talk, voice_cfg)
 
-        stop_continuous(force_transcribe=True)
-        return _ok(rid, {"status": "stopped"})
+        if hold_to_talk:
+            from hermes_cli.voice import stop_and_transcribe
+
+            transcript = stop_and_transcribe()
+            logger.info("voice.record stop: hold-to-talk transcript=%r", transcript)
+            _voice_emit("voice.transcript", {"text": transcript or ""})
+            return _ok(rid, {"status": "stopped", "transcript": transcript})
+        else:
+            from hermes_cli.voice import stop_continuous
+
+            stop_continuous(force_transcribe=True)
+            logger.info("voice.record stop: VAD continuous stopped")
+            return _ok(rid, {"status": "stopped"})
     except ImportError:
         return _err(
             rid, 5025, "voice module not available — install audio dependencies"

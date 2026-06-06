@@ -171,6 +171,7 @@ export function useMainApp(gw: GatewayClient) {
   const [voiceRecording, setVoiceRecording] = useState(false)
   const [voiceProcessing, setVoiceProcessing] = useState(false)
   const [voiceRecordKey, setVoiceRecordKey] = useState<ParsedVoiceRecordKey>(DEFAULT_VOICE_RECORD_KEY)
+  const [voiceHoldToTalk, setVoiceHoldToTalk] = useState(false)
   const [sessionStartedAt, setSessionStartedAt] = useState(() => Date.now())
   const [turnStartedAt, setTurnStartedAt] = useState<null | number>(null)
   const [goodVibesTick, setGoodVibesTick] = useState(0)
@@ -505,7 +506,7 @@ export function useMainApp(gw: GatewayClient) {
     }
   }, [ui.busy])
 
-  useConfigSync({ gw, setBellOnComplete, setVoiceEnabled, setVoiceRecordKey, sid: ui.sid })
+  useConfigSync({ gw, setBellOnComplete, setVoiceEnabled, setVoiceHoldToTalk, setVoiceRecordKey, sid: ui.sid })
 
   useEffect(() => {
     if (!ui.sid) {
@@ -690,11 +691,13 @@ export function useMainApp(gw: GatewayClient) {
     terminal: { hasSelection, scrollRef, scrollWithSelection, selection, stdout },
     voice: {
       enabled: voiceEnabled,
+      holdToTalk: voiceHoldToTalk,
       recordKey: voiceRecordKey,
       recording: voiceRecording,
       setProcessing: setVoiceProcessing,
       setRecording: setVoiceRecording,
       setVoiceEnabled,
+      setVoiceHoldToTalk,
       setVoiceTts
     },
     wheelStep: WHEEL_SCROLL_STEP
@@ -720,6 +723,7 @@ export function useMainApp(gw: GatewayClient) {
         voice: {
           setProcessing: setVoiceProcessing,
           setRecording: setVoiceRecording,
+          setVoiceHoldToTalk,
           setVoiceEnabled,
           setVoiceTts
         }
@@ -735,6 +739,7 @@ export function useMainApp(gw: GatewayClient) {
       session.resetSession,
       session.resumeById,
       setVoiceEnabled,
+      setVoiceHoldToTalk,
       setVoiceProcessing,
       setVoiceRecording,
       stdout,
@@ -827,7 +832,7 @@ export function useMainApp(gw: GatewayClient) {
         },
         slashFlightRef,
         transcript: { page, panel, send, setHistoryItems, sys, trimLastExchange: session.trimLastExchange },
-        voice: { setVoiceEnabled, setVoiceRecordKey, setVoiceTts }
+        voice: { setVoiceEnabled, setVoiceHoldToTalk, setVoiceRecordKey, setVoiceTts }
       }),
     [
       catalog,

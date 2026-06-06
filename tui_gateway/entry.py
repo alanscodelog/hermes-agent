@@ -213,6 +213,23 @@ def wait_for_mcp_discovery(timeout: float = 0.75) -> None:
 def main():
     _install_sidecar_publisher()
 
+    # Configure logging so TUI gateway loggers (tui_gateway.*, hermes_cli.voice)
+    # write to agent.log — the same file the CLI process uses.  Without this
+    # the subprocess has no handlers and all logger.info() calls are silently
+    # dropped, making voice diagnostics impossible to see.
+    try:
+        from hermes_logging import setup_logging
+        from hermes_constants import get_hermes_home
+        setup_logging(hermes_home=get_hermes_home(), mode="gui")
+    except Exception:
+        # Best-effort — don't crash the gateway if logging setup fails.
+        import logging
+        logging.basicConfig(
+            filename=os.path.join(os.path.expanduser("~/.hermes/logs"), "agent.log"),
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+
     # MCP tool discovery — runs in a background daemon thread so a slow or
     # unreachable MCP server can't freeze TUI startup.  Previously this ran
     # inline before ``gateway.ready``, which meant any configured-but-down

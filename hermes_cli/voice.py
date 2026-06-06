@@ -257,6 +257,22 @@ def _beeps_enabled() -> bool:
     return True
 
 
+def _hold_to_talk_enabled() -> bool:
+    """CLI parity: voice.hold_to_talk in config.yaml (default False)."""
+    try:
+        from hermes_cli.config import load_config
+
+        voice_cfg = load_config().get("voice", {})
+        if isinstance(voice_cfg, dict):
+            value = bool(voice_cfg.get("hold_to_talk", False))
+            logger.info("voice.hold_to_talk=%s (config voice=%r)", value, voice_cfg)
+            return value
+    except Exception as e:
+        logger.debug("failed to read voice.hold_to_talk from config: %s", e)
+    return False
+
+
+
 def _play_beep(frequency: int, count: int = 1) -> None:
     """Audible cue matching cli.py's record/stop beeps.
 
@@ -315,10 +331,12 @@ def start_recording() -> None:
 
     with _recorder_lock:
         if _recorder is not None and getattr(_recorder, "is_recording", False):
+            logger.info("start_recording: already recording — no-op")
             return
         rec = create_audio_recorder()
         rec.start()
         _recorder = rec
+        logger.info("start_recording: recording started")
 
 
 def stop_and_transcribe() -> Optional[str]:
@@ -334,6 +352,7 @@ def stop_and_transcribe() -> Optional[str]:
         _recorder = None
 
     if rec is None:
+        logger.info("stop_and_transcribe: no active recording")
         return None
 
     wav_path = rec.stop()
@@ -358,8 +377,10 @@ def stop_and_transcribe() -> Optional[str]:
         return None
     text = (result.get("transcript") or "").strip()
     if not text or is_whisper_hallucination(text):
+        logger.info("stop_and_transcribe: no speech detected")
         return None
 
+    logger.info("stop_and_transcribe: transcript=%r", text)
     return text
 
 

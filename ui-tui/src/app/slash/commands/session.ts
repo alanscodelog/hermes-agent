@@ -248,6 +248,7 @@ export const sessionCommands: SlashCommand[] = [
       ctx.gateway.rpc<VoiceToggleResponse>('voice.toggle', { action }).then(
         ctx.guarded<VoiceToggleResponse>(r => {
           ctx.voice.setVoiceEnabled(!!r.enabled)
+          ctx.voice.setVoiceHoldToTalk(!!r.hold_to_talk)
           ctx.voice.setVoiceTts(!!r.tts)
 
           // Render the configured record key (config.yaml ``voice.record_key``)
@@ -280,10 +281,12 @@ export const sessionCommands: SlashCommand[] = [
           if (action === 'status') {
             const mode = r.enabled ? 'ON' : 'OFF'
             const tts = r.tts ? 'ON' : 'OFF'
+            const hold = r.hold_to_talk ? 'ON' : 'OFF'
             ctx.transcript.sys('Voice Mode Status')
-            ctx.transcript.sys(`  Mode:       ${mode}`)
-            ctx.transcript.sys(`  TTS:        ${tts}`)
-            ctx.transcript.sys(`  Record key: ${recordKeyLabel}`)
+            ctx.transcript.sys(`  Mode:          ${mode}`)
+            ctx.transcript.sys(`  TTS:           ${tts}`)
+            ctx.transcript.sys(`  Hold to talk:  ${hold}`)
+            ctx.transcript.sys(`  Record key:    ${recordKeyLabel}`)
 
             // CLI's "Requirements:" block — surfaces STT/audio setup issues
             // so the user sees "STT provider: MISSING ..." instead of
@@ -311,8 +314,9 @@ export const sessionCommands: SlashCommand[] = [
           // on/off — mirror cli.py:_enable_voice_mode's 3-line output
           if (r.enabled) {
             const tts = r.tts ? ' (TTS enabled)' : ''
+            const holdLabel = r.hold_to_talk ? 'hold' : 'press'
             ctx.transcript.sys(`Voice mode enabled${tts}`)
-            ctx.transcript.sys(`  ${recordKeyLabel} to start/stop recording`)
+            ctx.transcript.sys(`  ${recordKeyLabel} to ${holdLabel} to start/stop recording`)
             ctx.transcript.sys('  /voice tts  to toggle speech output')
             ctx.transcript.sys('  /voice off  to disable voice mode')
           } else {

@@ -757,6 +757,20 @@ try:
 except Exception:
     pass  # Logging setup is best-effort — don't crash the CLI
 
+# Log voice config values so they appear in agent.log on every startup
+try:
+    _vc = CLI_CONFIG.get("voice", {}) if isinstance(CLI_CONFIG, dict) else {}
+    if isinstance(_vc, dict):
+        logger.info(
+            "voice config: enabled=%s, hold_to_talk=%s, tts=%s, beep_enabled=%s, record_key=%r",
+            _vc.get("enabled"), _vc.get("hold_to_talk"),
+            _vc.get("tts"), _vc.get("beep_enabled"), _vc.get("record_key"),
+        )
+    else:
+        logger.info("voice config: not a dict (value=%r)", _vc)
+except Exception:
+    pass
+
 # Validate config structure early — print warnings before user hits cryptic errors
 try:
     from hermes_cli.config import print_config_warnings

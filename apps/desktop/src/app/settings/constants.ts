@@ -277,6 +277,7 @@ export const FIELD_LABELS: Record<string, string> = {
   'voice.record_key': 'Voice Shortcut',
   'voice.max_recording_seconds': 'Max Recording Length',
   'voice.auto_tts': 'Read Responses Aloud',
+  'voice.hold_to_talk': 'Hold to Talk',
   'stt.enabled': 'Speech To Text',
   'stt.provider': 'Speech-To-Text Provider',
   'stt.local.model': 'Local Transcription Model',
@@ -334,6 +335,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   'context.engine': 'Strategy for managing long conversations near the context limit.',
   'compression.enabled': 'Summarize older context when conversations get large.',
   'voice.auto_tts': 'Automatically speak assistant responses.',
+  'voice.hold_to_talk': 'Hold the key down to record, release to stop.',
   'stt.enabled': 'Enable local or provider-backed speech transcription.',
   'stt.elevenlabs.language_code': 'Optional ISO-639-3 language code. Blank lets ElevenLabs auto-detect.',
   'agent.max_turns': 'Upper bound for tool-calling turns before Hermes stops a run.'
@@ -425,7 +427,8 @@ export const SECTIONS: DesktopConfigSection[] = [
       'stt.elevenlabs.tag_audio_events',
       'stt.elevenlabs.diarize',
       'voice.record_key',
-      'voice.max_recording_seconds'
+      'voice.max_recording_seconds',
+      'voice.hold_to_talk'
     ]
   },
   {

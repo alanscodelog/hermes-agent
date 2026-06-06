@@ -215,11 +215,13 @@ export interface InputHandlerContext {
   }
   voice: {
     enabled: boolean
+    holdToTalk: boolean
     recordKey: ParsedVoiceRecordKey
     recording: boolean
     setProcessing: StateSetter<boolean>
     setRecording: StateSetter<boolean>
     setVoiceEnabled: StateSetter<boolean>
+    setVoiceHoldToTalk: StateSetter<boolean>
     setVoiceTts: StateSetter<boolean>
   }
   wheelStep: number
@@ -263,6 +265,7 @@ export interface GatewayEventHandlerContext {
     setProcessing: StateSetter<boolean>
     setRecording: StateSetter<boolean>
     setVoiceEnabled: StateSetter<boolean>
+    setVoiceHoldToTalk: StateSetter<boolean>
     setVoiceTts: StateSetter<boolean>
   }
 }
@@ -306,6 +309,7 @@ export interface SlashHandlerContext {
   }
   voice: {
     setVoiceEnabled: StateSetter<boolean>
+    setVoiceHoldToTalk: StateSetter<boolean>
     setVoiceRecordKey: (v: ParsedVoiceRecordKey) => void
     setVoiceTts: StateSetter<boolean>
   }
