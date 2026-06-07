@@ -12408,10 +12408,6 @@ class HermesCLI:
             from run_agent import _sanitize_surrogates
             message = _sanitize_surrogates(message)
 
-        # Apply trigger phrases (phrases -> instructions appended,
-        # replacements -> text substituted in place)
-        message = _apply_trigger_phrases(message, CLI_CONFIG)
-
         # Add user message to history
         self.conversation_history.append({"role": "user", "content": message})
 
@@ -15312,6 +15308,12 @@ class HermesCLI:
                     paste_refs = list(_paste_ref_re.finditer(user_input)) if isinstance(user_input, str) else []
                     if paste_refs:
                         user_input = self._expand_paste_references(user_input)
+
+                    # Apply trigger phrases before preview so the displayed text
+                    # matches what the model actually receives.
+                    if isinstance(user_input, str):
+                        user_input = _apply_trigger_phrases(user_input, CLI_CONFIG)
+
                     print()
                     self._print_user_message_preview(user_input)
                     
