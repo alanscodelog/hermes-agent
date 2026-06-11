@@ -6456,7 +6456,21 @@ class HermesCLI:
     
     def show_tools(self):
         """Display available tools with kawaii ASCII art."""
-        tools = get_tool_definitions(enabled_toolsets=self.enabled_toolsets, quiet_mode=True)
+        # Read per-tool exclusions from config (issue #31375)
+        from hermes_cli.config import load_config as _load_cfg
+        try:
+            _tcfg = _load_cfg()
+        except Exception:
+            _tcfg = {}
+        from hermes_cli.config import cfg_get
+        excluded = cfg_get(_tcfg, "tools", "exclude", default=[])
+        excluded = excluded if isinstance(excluded, list) and excluded else None
+
+        tools = get_tool_definitions(
+            enabled_toolsets=self.enabled_toolsets,
+            excluded_tools=excluded,
+            quiet_mode=True,
+        )
         
         if not tools:
             print("(;_;) No tools available")

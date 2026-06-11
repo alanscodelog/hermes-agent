@@ -264,6 +264,7 @@ def _clear_tool_defs_cache() -> None:
 def get_tool_definitions(
     enabled_toolsets: Optional[List[str]] = None,
     disabled_toolsets: Optional[List[str]] = None,
+    excluded_tools: Optional[List[str]] = None,
     quiet_mode: bool = False,
     skip_tool_search_assembly: bool = False,
 ) -> List[Dict[str, Any]]:
@@ -275,6 +276,7 @@ def get_tool_definitions(
     Args:
         enabled_toolsets: Only include tools from these toolsets.
         disabled_toolsets: Exclude tools from these toolsets (if enabled_toolsets is None).
+        excluded_tools: Exclude individual tool names regardless of toolset.
         quiet_mode: Suppress status prints.
         skip_tool_search_assembly: When True, return the pre-assembly tool list
             (raw schemas for every enabled tool). Used internally by the
@@ -304,6 +306,7 @@ def get_tool_definitions(
         cache_key = (
             frozenset(enabled_toolsets) if enabled_toolsets is not None else None,
             frozenset(disabled_toolsets) if disabled_toolsets else None,
+            frozenset(excluded_tools) if excluded_tools else None,
             registry._generation,
             cfg_fp,
             bool(os.environ.get("HERMES_KANBAN_TASK")),
@@ -319,8 +322,13 @@ def get_tool_definitions(
             # schemas are treated as read-only by all known callers.
             return list(cached)
 
-    result = _compute_tool_definitions(enabled_toolsets, disabled_toolsets, quiet_mode,
-                                       skip_tool_search_assembly=skip_tool_search_assembly)
+    result = _compute_tool_definitions(
+        enabled_toolsets=enabled_toolsets,
+        disabled_toolsets=disabled_toolsets,
+        excluded_tools=excluded_tools,
+        quiet_mode=quiet_mode,
+        skip_tool_search_assembly=skip_tool_search_assembly
+    )
     if quiet_mode:
         # Cache the freshly-computed list, but hand callers a shallow copy so
         # downstream mutations (e.g. run_agent appending memory/LCM tool
@@ -337,6 +345,7 @@ def get_tool_definitions(
 def _compute_tool_definitions(
     enabled_toolsets: Optional[List[str]] = None,
     disabled_toolsets: Optional[List[str]] = None,
+    excluded_tools: Optional[List[str]] = None,
     quiet_mode: bool = False,
     skip_tool_search_assembly: bool = False,
 ) -> List[Dict[str, Any]]:
@@ -390,6 +399,16 @@ def _compute_tool_definitions(
                     print(f"🚫 Disabled legacy toolset '{toolset_name}': {', '.join(legacy_tools)}")
             elif not quiet_mode:
                 print(f"⚠️  Unknown toolset: {toolset_name}")
+
+    # Apply per-tool exclusions from config (tools.exclude).
+    # Runs after toolset enable/disable so individual tools can be stripped
+    # from otherwise-enabled toolsets. See issue #31375.
+    if excluded_tools:
+        excluded_set = set(excluded_tools)
+        removed = tools_to_include & excluded_set
+        tools_to_include -= excluded_set
+        if removed and not quiet_mode:
+            print(f"🚫 Excluded tools: {', '.join(sorted(removed))}")
 
     # Plugin-registered tools are now resolved through the normal toolset
     # path — validate_toolset() / resolve_toolset() / get_all_toolsets()

@@ -1669,6 +1669,85 @@ def _prompt_toolset_checklist(
     return {effective[i][0] for i in chosen}
 
 
+def _get_excluded_tools(config: dict) -> Set[str]:
+    """Return the set of tool names excluded via config ``tools.exclude``."""
+    excluded = cfg_get(config, "tools", "exclude", default=[])
+    if not isinstance(excluded, list):
+        return set()
+    return {str(t) for t in excluded if isinstance(t, str)}
+
+
+def _save_excluded_tools(config: dict, excluded: Set[str]) -> None:
+    """Save the excluded tool names to config ``tools.exclude``."""
+    config.setdefault("tools", {})
+    config["tools"]["exclude"] = sorted(excluded) if excluded else []
+    # Clean up empty tools section if no exclusions
+    if not excluded and "tools" in config:
+        if not config["tools"]:
+            del config["tools"]
+    save_config(config)
+
+
+def _prompt_tool_exclusions(
+    platform_label: str,
+    enabled_toolset_keys: Set[str],
+    current_excluded: Set[str],
+    platform: str = "cli",
+) -> Set[str]:
+    """Multi-select checklist of individual tools within enabled toolsets.
+
+    Returns the updated set of excluded tool names. Tools not in any enabled
+    toolset are excluded from the list (you can't exclude a tool that isn't
+    available anyway).
+    """
+    from hermes_cli.curses_ui import curses_checklist
+    from toolsets import resolve_toolset
+
+    # Collect all tool names across enabled toolsets
+    all_tools: set = set()
+    for ts_key in enabled_toolset_keys:
+        resolved = resolve_toolset(ts_key)
+        all_tools.update(resolved)
+
+    # MCP server toolsets (named "mcp-<server>") are not in toolsets.py;
+    # resolve them by querying the registry directly for tools whose
+    # toolset attribute matches the MCP server name.
+    try:
+        from tools.registry import registry
+        for ts_key in enabled_toolset_keys:
+            if ts_key.startswith("mcp-"):
+                all_tools.update(
+                    e.name for e in registry._snapshot_entries()
+                    if e.toolset == ts_key
+                )
+    except Exception:
+        pass
+
+    if not all_tools:
+        return current_excluded
+
+    # Only show tools that are actually available (in enabled toolsets)
+    available = sorted(all_tools)
+    if len(available) < 5:
+        # Too few tools to bother with a separate screen
+        return current_excluded
+
+    labels = list(available)
+    # Pre-select currently excluded tools
+    pre_selected = {
+        i for i, tool in enumerate(available)
+        if tool in current_excluded
+    }
+
+    chosen = curses_checklist(
+        f"Tools to exclude for {platform_label} (check to exclude)",
+        labels,
+        pre_selected,
+        cancel_returns=pre_selected,
+    )
+    return {available[i] for i in chosen}
+
+
 # ─── Provider-Aware Configuration ────────────────────────────────────────────
 
 def _configure_toolset(
@@ -3389,6 +3468,14 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
                 for ts_key in to_configure:
                     _configure_toolset(ts_key, config)
 
+            # Ask which individual tools to exclude (issue #31375)
+            current_excluded = _get_excluded_tools(config)
+            new_excluded = _prompt_tool_exclusions(
+                pinfo["label"], new_enabled, current_excluded, pkey
+            )
+            if new_excluded != current_excluded:
+                _save_excluded_tools(config, new_excluded)
+
             _save_platform_tools(config, pkey, new_enabled)
             save_config(config)
             print(color(f"  ✓ Saved {pinfo['label']} tool configuration", Colors.GREEN))
@@ -3483,6 +3570,13 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
                             ):
                                 _configure_toolset(ts_key, config)
                     _save_platform_tools(config, pk, new_enabled)
+                # Ask which individual tools to exclude (issue #31375)
+                current_excluded = _get_excluded_tools(config)
+                new_excluded = _prompt_tool_exclusions(
+                    "All platforms", new_enabled, current_excluded
+                )
+                if new_excluded != current_excluded:
+                    _save_excluded_tools(config, new_excluded)
                 save_config(config)
                 print(color("  ✓ Saved configuration for all platforms", Colors.GREEN))
                 # Update choice labels
@@ -3534,6 +3628,14 @@ def tools_command(args=None, first_install: bool = False, config: dict = None):
                         force_fresh=True,
                     ):
                         _configure_toolset(ts_key, config)
+
+            # Ask which individual tools to exclude (issue #31375)
+            current_excluded = _get_excluded_tools(config)
+            new_excluded = _prompt_tool_exclusions(
+                pinfo["label"], new_enabled, current_excluded, pkey
+            )
+            if new_excluded != current_excluded:
+                _save_excluded_tools(config, new_excluded)
 
             _save_platform_tools(config, pkey, new_enabled)
             save_config(config)

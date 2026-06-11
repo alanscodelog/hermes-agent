@@ -903,10 +903,20 @@ def init_agent(
             print(f"🔄 Fallback chain ({len(agent._fallback_chain)} providers): " +
                   " → ".join(f"{f['model']} ({f['provider']})" for f in agent._fallback_chain))
 
-    # Get available tools with filtering
+     # Get available tools with filtering
+    # Read per-tool exclusions from config (tools.exclude). See issue #31375.
+    try:
+        from hermes_cli.config import load_config as _load_cfg
+        _tcfg = _load_cfg()
+    except Exception:
+        _tcfg = {}
+    excluded_tools = cfg_get(_tcfg, "tools", "exclude", default=[])
+    if not isinstance(excluded_tools, list):
+        excluded_tools = []
     agent.tools = _ra().get_tool_definitions(
         enabled_toolsets=enabled_toolsets,
         disabled_toolsets=disabled_toolsets,
+        excluded_tools=excluded_tools if excluded_tools else None,
         quiet_mode=agent.quiet_mode,
     )
     
