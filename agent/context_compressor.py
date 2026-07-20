@@ -2497,9 +2497,7 @@ class ContextCompressor(ContextEngine):
         operate on the effective input budget. ``max_tokens=None`` (provider
         default) conservatively assumes no reservation (full window).
         """
-        effective_window = context_length - (max_tokens or 0)
-        if effective_window <= 0:
-            effective_window = context_length
+        effective_window = context_length
         pct_value = int(effective_window * threshold_percent)
         floored = max(pct_value, MINIMUM_CONTEXT_LENGTH)
         # If flooring pushed the threshold to/over the effective window it can
