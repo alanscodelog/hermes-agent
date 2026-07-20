@@ -543,7 +543,7 @@ class FileOperations(ABC):
 
     @abstractmethod
     def patch_replace(self, path: str, old_string: str, new_string: str,
-                      replace_all: bool = False) -> PatchResult:
+                      replace_all: bool = False, exact_only: bool = True) -> PatchResult:
         """Replace text in a file using fuzzy matching."""
         ...
 
@@ -2042,7 +2042,7 @@ class ShellFileOperations(FileOperations):
     # =========================================================================
     
     def patch_replace(self, path: str, old_string: str, new_string: str,
-                      replace_all: bool = False) -> PatchResult:
+                      replace_all: bool = False, exact_only: bool = True) -> PatchResult:
         """
         Replace text in a file using fuzzy matching.
 
@@ -2085,7 +2085,7 @@ class ShellFileOperations(FileOperations):
         from tools.fuzzy_match import fuzzy_find_and_replace
         
         new_content, match_count, _strategy, error = fuzzy_find_and_replace(
-            content, old_string, new_string, replace_all
+            content, old_string, new_string, replace_all, exact_only
         )
         
         if error or match_count == 0:

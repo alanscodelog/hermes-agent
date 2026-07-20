@@ -117,7 +117,8 @@ def _format_match_locations(content: str, matches: List[Tuple[int, int]],
 
 
 def fuzzy_find_and_replace(content: str, old_string: str, new_string: str,
-                            replace_all: bool = False) -> Tuple[str, int, Optional[str], Optional[str]]:
+                            replace_all: bool = False,
+                            exact_only: bool = True) -> Tuple[str, int, Optional[str], Optional[str]]:
     """
     Find and replace text using a chain of increasingly fuzzy matching strategies.
 
@@ -145,6 +146,21 @@ def fuzzy_find_and_replace(content: str, old_string: str, new_string: str,
     if old_string == new_string:
         return content, 0, None, "old_string and new_string are identical"
 
+
+    if exact_only:
+        # Skip all fuzzy strategies — only try exact match.
+        # This avoids indentation inflation when the fuzzy matcher
+        # picks the wrong anchor in files with multiple similar
+        # closing braces at different indentation levels.
+        matches = _strategy_exact(content, old_string)
+        if matches:
+            if len(matches) > 1 and not replace_all:
+                return content, 0, None, (
+                    f"Found {len(matches)} matches for old_string. "
+                    f"Provide more context to make it unique, or use replace_all=True."
+                )
+            return _apply_exact(content, matches, new_string, old_string)
+        return content, 0, None, "Could not find an exact match for old_string in the file"
     # Try each matching strategy in order
     strategies: List[Tuple[str, Callable]] = [
         ("exact", _strategy_exact),
@@ -511,6 +527,22 @@ def _apply_replacements(content: str, matches: List[Tuple[int, int]],
         result = result[:start] + adjusted + result[end:]
 
     return result
+
+
+def _apply_exact(content: str, matches: List[Tuple[int, int]],
+                 new_string: str, old_string: str) -> Tuple[str, int, Optional[str], Optional[str]]:
+    """Apply an exact replacement and return the result tuple.
+
+    For ``exact_only`` mode: replaces the matched region with ``new_string``
+    verbatim — no reindentation, no unescape, no unicode normalization.
+    The match was exact, so the file's indentation already matches.
+    """
+    sorted_matches = sorted(matches, key=lambda x: x[0], reverse=True)
+    result = content
+    for start, end in sorted_matches:
+        result = result[:start] + new_string + result[end:]
+    return result, len(matches), "exact", None
+
 
 
 # =============================================================================
