@@ -1293,6 +1293,16 @@ class ContextCompressor(ContextEngine):
         effective_window = context_length - (max_tokens or 0)
         if effective_window <= 0:
             effective_window = context_length
+        # Cap max_tokens so the effective input budget never drops below
+        # a quarter of the context window.  When the operator sets a huge
+        # max_tokens (e.g. 120K on a 128K window) the effective window
+        # would shrink to ~8K — below the incompressible floor of system
+        # prompt + tool schemas (~24K).  The threshold then degenerates to
+        # ~6.8K and compression fires on every turn, thrashing a transcript
+        # that is already smaller than the effective window.
+        _min_effective = max(1, int(context_length * 0.25))
+        if effective_window < _min_effective:
+            effective_window = _min_effective
         pct_value = int(effective_window * threshold_percent)
         floored = max(pct_value, MINIMUM_CONTEXT_LENGTH)
         # If flooring pushed the threshold to/over the effective window it can
