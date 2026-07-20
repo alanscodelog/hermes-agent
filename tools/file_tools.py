@@ -2329,12 +2329,17 @@ def write_file_tool(path: str, content: str, task_id: str = "default",
 
 def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
                new_string: str = None, replace_all: bool = False, patch: str = None,
-               task_id: str = "default", cross_profile: bool = False,
-               session_id: str | None = None) -> str:
+               exact_only: bool = True, task_id: str = "default",
+               cross_profile: bool = False, session_id: str | None = None) -> str:
     """Patch a file using replace mode or V4A patch format.
 
-    ``cross_profile``: same semantics as ``write_file``'s flag (mirror-guard
-    bypass only; unadvertised).
+    When ``exact_only=True``, skips fuzzy matching and requires an exact
+    string match. Use this for tab-indented files where fuzzy matching may
+    match the wrong location and corrupt indentation.
+
+    ``cross_profile`` opts out of the soft cross-Hermes-profile guard for
+    targets under another profile's skills/plugins/cron/memories
+    directory. Same shape as ``write_file``'s flag.
     """
     # Check sensitive paths for both replace (explicit path) and V4A patch (extract paths)
     _paths_to_check = []
@@ -2464,7 +2469,7 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
                 # path would let the two layers disagree about which file is
                 # being edited.
                 _replace_target = _path_to_resolved.get(path) or path
-                result = file_ops.patch_replace(_replace_target, old_string, new_string, replace_all)
+                result = file_ops.patch_replace(_replace_target, old_string, new_string, replace_all, exact_only)
             elif mode == "patch":
                 if not patch:
                     return tool_error("patch content required")
