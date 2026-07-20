@@ -110,7 +110,7 @@ class FileOperations(ABC):
 
     @abstractmethod
     def patch_replace(self, path: str, old_string: str, new_string: str,
-                      replace_all: bool = False) -> PatchResult:
+                      replace_all: bool = False, exact_only: bool = True) -> PatchResult:
         """Replace text in a file using fuzzy matching."""
 
     @abstractmethod
@@ -1309,7 +1309,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return None
 
     def patch_replace(self, path: str, old_string: str, new_string: str,
-                      replace_all: bool = False) -> PatchResult:
+                      replace_all: bool = False, exact_only: bool = True) -> PatchResult:
         """Replace text in a file using fuzzy matching (``old_string`` must be
         unique unless ``replace_all``). Returns a PatchResult with diff + lint."""
         path = self._expand_path(path)
@@ -1326,7 +1326,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
 
         from tools.fuzzy_match import fuzzy_find_and_replace
         new_content, match_count, _strategy, error = fuzzy_find_and_replace(
-            content, old_string, new_string, replace_all)
+            content, old_string, new_string, replace_all, exact_only)
         if error or match_count == 0:
             return self._no_match_result(path, content, old_string, new_string, match_count, error)
         # Models send bare-LF old/new strings; normalize the substituted region to

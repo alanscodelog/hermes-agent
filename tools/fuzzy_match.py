@@ -11,7 +11,7 @@ still land on the intended region::
 
 import re
 from difflib import SequenceMatcher
-from typing import Callable, Optional
+from typing import Callable, List, Optional, Tuple
 
 Span = tuple[int, int]
 
@@ -335,7 +335,8 @@ def _format_match_locations(content: str, matches: list[Span], cap: int = 5) -> 
 
 
 def fuzzy_find_and_replace(content: str, old_string: str, new_string: str,
-                           replace_all: bool = False) -> tuple[str, int, Optional[str], Optional[str]]:
+                           replace_all: bool = False,
+                           exact_only: bool = True) -> tuple[str, int, Optional[str], Optional[str]]:
     """Find and replace via the strategy chain.
 
     Returns ``(new_content, match_count, strategy_name, error)``; on failure
@@ -349,6 +350,21 @@ def fuzzy_find_and_replace(content: str, old_string: str, new_string: str,
         return content, 0, None, "old_string is only whitespace — provide non-blank text to match"
     if old_string == new_string:
         return content, 0, None, IDENTICAL_STRINGS_ERROR
+
+    if exact_only:
+        # Skip all fuzzy strategies — only try exact match.
+        # This avoids indentation inflation when the fuzzy matcher
+        # picks the wrong anchor in files with multiple similar
+        # closing braces at different indentation levels.
+        matches = _strategy_exact(content, old_string)
+        if matches:
+            if len(matches) > 1 and not replace_all:
+                return content, 0, None, (
+                    f"Found {len(matches)} matches for old_string. "
+                    f"Provide more context to make it unique, or use replace_all=True."
+                )
+            return _apply_exact(content, matches, new_string, old_string)
+        return content, 0, None, "Could not find an exact match for old_string in the file"
 
     for strategy_name, strategy_fn in STRATEGIES:
         matches = strategy_fn(content, old_string)
@@ -523,6 +539,23 @@ def _apply_replacements(content: str, matches: list[Span],
             adjusted = _reindent_replacement(content[start:end], old_string, new_string)
         result = result[:start] + adjusted + result[end:]
     return result
+
+
+
+def _apply_exact(content: str, matches: List[Tuple[int, int]],
+                 new_string: str, old_string: str) -> Tuple[str, int, Optional[str], Optional[str]]:
+    """Apply an exact replacement and return the result tuple.
+
+    For ``exact_only`` mode: replaces the matched region with ``new_string``
+    verbatim — no reindentation, no unescape, no unicode normalization.
+    The match was exact, so the file's indentation already matches.
+    """
+    sorted_matches = sorted(matches, key=lambda x: x[0], reverse=True)
+    result = content
+    for start, end in sorted_matches:
+        result = result[:start] + new_string + result[end:]
+    return result, len(matches), "exact", None
+
 
 
 # ── "Did you mean?" diagnostics ──────────────────────────────────────────
