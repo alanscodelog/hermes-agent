@@ -510,6 +510,21 @@ def _dispatch_nonstreaming_api_request(agent, api_kwargs: dict, *, make_client):
     interrupt, abort, cancellation, and close semantics stay in the callers —
     this helper only issues the request.
     """
+    # -- Proactive rate-limit throttle --
+    # Client-side RPM/TPM throttle keyed by (provider, model).  Blocks
+    # before the HTTP request so we never hit a 429 when limits are
+    # configured.  Config: providers.<name>.model_limits.<model>.rpm/tpm
+    try:
+        from agent.proactive_rate_limiter import wait_for_rate_limit_sync
+        _model = api_kwargs.get("model", "")
+        _provider = getattr(agent, "provider", "") or ""
+        _est_tokens = estimate_request_context_tokens(api_kwargs)
+        _config = getattr(agent, "config", {}) or {}
+        wait_for_rate_limit_sync(_provider, _model, _config, _est_tokens)
+    except Exception:
+        # Never let a throttle bug block a legitimate request
+        pass
+
     if agent.api_mode == "codex_responses":
         request_client = make_client("codex_stream_request")
         return agent._run_codex_stream(
@@ -2747,6 +2762,21 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
     """
     if agent._interrupt_requested:
         raise InterruptedError("Agent interrupted before streaming API call")
+
+    # -- Proactive rate-limit throttle --
+    # Client-side RPM/TPM throttle keyed by (provider, model).  Blocks
+    # before the HTTP request so we never hit a 429 when limits are
+    # configured.  Config: providers.<name>.model_limits.<model>.rpm/tpm
+    try:
+        from agent.proactive_rate_limiter import wait_for_rate_limit_sync
+        _model = api_kwargs.get("model", "")
+        _provider = getattr(agent, "provider", "") or ""
+        _est_tokens = estimate_request_context_tokens(api_kwargs)
+        _config = getattr(agent, "config", {}) or {}
+        wait_for_rate_limit_sync(_provider, _model, _config, _est_tokens)
+    except Exception:
+        # Never let a throttle bug block a legitimate request
+        pass
 
     # Cron and other non-interactive, nested-pool contexts deadlock on the
     # spawned worker thread (#62151). They also have no stream consumer, so the
