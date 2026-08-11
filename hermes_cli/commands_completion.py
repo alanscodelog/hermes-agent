@@ -349,6 +349,45 @@ class SlashCommandCompleter(Completer):
         word = text.rpartition(" ")[2]
         return word if word.startswith("@") else None
 
+    @staticmethod
+    def _extract_phrase_word(text: str) -> str | None:
+        """Extract a bare ``#`` token for trigger phrase completions."""
+        if not text:
+            return None
+        i = len(text) - 1
+        while i >= 0 and text[i] != " ":
+            i -= 1
+        word = text[i + 1:]
+        if not word.startswith("#"):
+            return None
+        return word
+
+    def _phrase_completions(self, word: str, limit: int = 30):
+        """Yield completions for trigger phrases (``#phrase``)."""
+        try:
+            from hermes_cli.config import load_config
+            config = load_config()
+            tp = config.get("agent", {}).get("triggerPhrases", {})
+            if not tp:
+                return
+            phrases = tp.get("phrases", {})
+            replacements = tp.get("replacements", {})
+            all_phrases = {**replacements, **phrases}
+            typed = word.lower()
+            count = 0
+            for key, value in sorted(all_phrases.items()):
+                if key.lower().startswith(typed) and key.lower() != typed:
+                    if count >= limit:
+                        break
+                    desc = str(value)[:60]
+                    short_desc = desc + ("..." if len(desc) > 60 else "")
+                    tag = "phrase" if key in phrases else "replace"
+                    yield _completion(
+                        str(value), word, key, f"{tag}: {short_desc}")
+                    count += 1
+        except Exception:
+            pass
+
     def _context_completions(self, word: str, limit: int = 30):
         """@ completions: static refs, ``@file:``/``@folder:`` paths, else fuzzy project files."""
         lowered = word.lower()
@@ -419,9 +458,12 @@ class SlashCommandCompleter(Completer):
         text = document.text_before_cursor
         if not text.startswith("/"):
             ctx_word = self._extract_context_word(text)
+            phrase_word = self._extract_phrase_word(text)
             path_word = _extract_path_word(text)
             if ctx_word is not None:
                 yield from self._context_completions(ctx_word)
+            elif phrase_word is not None:
+                yield from self._phrase_completions(phrase_word)
             elif path_word is not None:
                 yield from _path_completions(path_word)
             return
@@ -484,9 +526,29 @@ class SlashCommandAutoSuggest(AutoSuggest):
     def _history_suggestion(self, buffer, document):
         return self._history.get_suggestion(buffer, document) if self._history else None
 
+    @staticmethod
+    def _load_phrases() -> dict[str, str]:
+        """Load configured trigger phrases and replacements from config."""
+        try:
+            from hermes_cli.config import read_raw_config
+            cfg = read_raw_config()
+            tp = cfg.get("agent", {}).get("triggerPhrases", {})
+            phrases = dict(tp.get("phrases", {}))
+            phrases.update(tp.get("replacements", {}))
+            return phrases
+        except Exception:
+            return {}
+
     def get_suggestion(self, buffer, document):
         text = document.text_before_cursor
         if not text.startswith("/"):
+            phrase_word = SlashCommandCompleter._extract_phrase_word(text)
+            if phrase_word:
+                key = phrase_word[1:]
+                phrases = self._load_phrases()
+                for pk in phrases:
+                    if pk.startswith(key) and pk != key:
+                        return Suggestion(f"#{pk[len(key):]}")
             return self._history_suggestion(buffer, document)
         parts = text.split(maxsplit=1)
         base_cmd = parts[0].lower()
