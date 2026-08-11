@@ -1707,8 +1707,9 @@ class SlashCommandCompleter(Completer):
                     desc = str(value)[:60]
                     short_desc = desc + ("..." if len(desc) > 60 else "")
                     tag = "phrase" if key in phrases else "replace"
+                    # On accept, insert the instruction text (value) — not the key
                     yield Completion(
-                        key,
+                        str(value),
                         start_position=-len(word),
                         display=key,
                         display_meta=f"{tag}: {short_desc}",
