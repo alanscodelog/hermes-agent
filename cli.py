@@ -13335,6 +13335,60 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 # No menu and no suggestion — start completions from scratch
                 buf.start_completion()
 
+        @kb.add(' ')
+        def handle_space_phrase_replace(event):
+            """Replace #phrase tokens with their instruction text on space press.
+
+            When the cursor is right after a full ``#phrase`` key (e.g.
+            ``#fullplan``) and the user presses space, replace the token with
+            the corresponding instruction from ``agent.triggerPhrases`` config.
+            If the token doesn't match any phrase, just insert a normal space.
+            """
+            buf = event.current_buffer
+            text = buf.text
+            cursor = buf.cursor_position
+            if cursor < 1:
+                buf.insert_text(' ')
+                return  # nothing before cursor
+
+            # Extract the word ending at cursor position
+            before = text[:cursor]
+            m = re.search(r'(#\S+)\s*$', before)
+            if not m:
+                # No # token — just insert a normal space
+                buf.insert_text(' ')
+                return
+
+            token = m.group(1)
+            key = token[1:]  # strip #
+
+            # Load phrases from config
+            try:
+                from hermes_cli.config import load_config
+                config = load_config()
+                tp = config.get("agent", {}).get("triggerPhrases", {})
+                phrases = tp.get("phrases", {})
+                replacements = tp.get("replacements", {})
+                all_phrases = {**replacements, **phrases}
+            except Exception:
+                buf.insert_text(' ')
+                return
+
+            if key not in all_phrases:
+                # Not a known phrase — just insert a normal space
+                buf.insert_text(' ')
+                return
+
+            # Replace the token with the instruction text
+            value = str(all_phrases[key])
+            # Delete the token from the buffer
+            token_start = cursor - len(token)
+            buf.delete_previous_char(len(token))
+            # Insert the instruction text
+            buf.insert_text(value)
+            # Insert the space the user typed
+            buf.insert_text(' ')
+
         # --- Clarify tool: arrow-key navigation for multiple-choice questions ---
 
         @kb.add('up', filter=Condition(lambda: bool(self._clarify_state) and not self._clarify_freetext))
