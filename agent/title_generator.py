@@ -174,6 +174,19 @@ def _title_prompt() -> str:
         return _TITLE_PROMPT_TEMPLATE
 
 
+def _title_turn() -> int:
+    """Return configured title turn index (0 = first turn, default)."""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        config = load_config_readonly()
+        title_config = (config.get("auxiliary") or {}).get("title_generation") or {}
+        turn = int(title_config.get("turn", 0))
+        return max(0, turn)
+    except Exception:
+        return 0
+
+
 def _auto_title_enabled() -> bool:
     """Return whether automatic session title generation is enabled."""
     try:
@@ -729,6 +742,17 @@ def maybe_auto_title(
         return
 
     if not is_titleable_user_message(user_message):
+        return
+
+    # Respect the configured turn index — delay both instant and LLM titles
+    # until the user has reached the specified turn (0 = first message).
+    title_turn = _title_turn()
+    if user_msg_count < title_turn:
+        logger.debug(
+            "Auto-title skipped: turn %d < configured title turn %d",
+            user_msg_count,
+            title_turn,
+        )
         return
 
     # Config read comes after the cheap guards so the file isn't touched on

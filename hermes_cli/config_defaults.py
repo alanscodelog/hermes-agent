@@ -1006,7 +1006,8 @@ DEFAULT_CONFIG = {
             "extra_body": {},
             "reasoning_effort": "",  # per-task thinking level: none|minimal|low|medium|high|xhigh|max|ultra (empty = provider default)
             "language": "",
-			"prompt": ""
+			"prompt": "",
+			"turn": 0
         },
         "memory_query_rewrite": {
             "provider": "auto",
