@@ -273,6 +273,7 @@ DEFAULT_CONFIG = {
         # "replacements" — if the user message contains the key, it is replaced
         # with the value verbatim; no instructions prefix is appended.
         "triggerPhrases": {},
+		
     },
 
     "terminal": {
@@ -742,6 +743,8 @@ DEFAULT_CONFIG = {
             "extra_body": {},
             "reasoning_effort": "",
             "language": "",
+			"prompt": "",
+			"turn": 0
         },
         "memory_query_rewrite": _aux(8, reasoning_effort=False),
         "tts_audio_tags": _aux(30),
