@@ -159,6 +159,21 @@ def _title_language() -> str:
         return ""
 
 
+def _title_prompt() -> str:
+    """Return configured title prompt, or the built-in template."""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        prompt = str(
+            ((load_config_readonly() or {}).get("auxiliary") or {})
+            .get("title_generation", {})
+            .get("prompt", "")
+        ).strip()
+        return prompt if prompt else _TITLE_PROMPT_TEMPLATE
+    except Exception:
+        return _TITLE_PROMPT_TEMPLATE
+
+
 def _auto_title_enabled() -> bool:
     """Return whether automatic session title generation is enabled."""
     try:
@@ -384,7 +399,7 @@ def generate_title(
     )
     # Placeholder substitution, not str.format: the prompt embeds literal JSON
     # braces as few-shot examples, which format() would try to interpolate.
-    prompt = _TITLE_PROMPT_TEMPLATE.replace("__LANGUAGE_RULE__", language_rule)
+    prompt = _title_prompt().replace("__LANGUAGE_RULE__", language_rule)
 
     messages = [
         {"role": "system", "content": prompt},
