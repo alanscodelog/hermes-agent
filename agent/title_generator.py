@@ -167,6 +167,34 @@ def _title_language() -> str:
         return ""
 
 
+def _title_prompt() -> str:
+    """Return configured title prompt, or the built-in template."""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        prompt = str(
+            ((load_config_readonly() or {}).get("auxiliary") or {})
+            .get("title_generation", {})
+            .get("prompt", "")
+        ).strip()
+        return prompt if prompt else _TITLE_PROMPT_TEMPLATE
+    except Exception:
+        return _TITLE_PROMPT_TEMPLATE
+
+
+def _title_turn() -> int:
+    """Return configured title turn index (0 = first turn, default)."""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        config = load_config_readonly()
+        title_config = (config.get("auxiliary") or {}).get("title_generation") or {}
+        turn = int(title_config.get("turn", 0))
+        return max(0, turn)
+    except Exception:
+        return 0
+
+
 def _auto_title_enabled() -> bool:
     """Return whether automatic session title generation is enabled."""
     try:
@@ -392,7 +420,7 @@ def generate_title(
     )
     # Placeholder substitution, not str.format: the prompt embeds literal JSON
     # braces as few-shot examples, which format() would try to interpolate.
-    prompt = _TITLE_PROMPT_TEMPLATE.replace("__LANGUAGE_RULE__", language_rule)
+    prompt = _title_prompt().replace("__LANGUAGE_RULE__", language_rule)
 
     messages = [
         {"role": "system", "content": prompt},
@@ -677,6 +705,39 @@ def _is_real_user_turn(message: Any) -> bool:
     )
 
 
+def _collect_user_messages(
+    conversation_history: Optional[list],
+    current_message: str,
+    count: int,
+) -> str:
+    """Collect the last *count* real user messages and join them with blank lines.
+
+    ``current_message`` is always included as the most recent message. When
+    *count* is 1 only the current message is returned.
+    """
+    if count <= 1:
+        return current_message
+
+    messages = []
+    needed = count - 1  # current_message fills the last slot
+
+    for msg in reversed(conversation_history or []):
+        if _is_real_user_turn(msg):
+            content = msg.get("content")
+            if isinstance(content, str):
+                text = content
+            else:
+                from agent.message_content import flatten_message_text
+                text = flatten_message_text(content)
+            messages.insert(0, text)
+            needed -= 1
+            if needed <= 0:
+                break
+
+    messages.append(current_message)
+    return "\n\n".join(messages)
+
+
 def _session_is_untitled(session_db, session_id: str) -> bool:
     """Whether the session still carries no title of any provenance.
 
@@ -739,17 +800,34 @@ def maybe_auto_title(
     if not is_titleable_user_message(user_message):
         return
 
+    # Respect the configured turn index — delay both instant and LLM titles
+    # until the user has reached the specified turn (0 = first message).
+    title_turn = _title_turn()
+    if user_msg_count < title_turn:
+        logger.debug(
+            "Auto-title skipped: turn %d < configured title turn %d",
+            user_msg_count,
+            title_turn,
+        )
+        return
+
     # Config read comes after the cheap guards so the file isn't touched on
     # every subsequent turn of a long session.
     if not _auto_title_enabled():
         logger.debug("Auto-title skipped: auxiliary.title_generation.enabled=false")
         return
 
-    apply_instant_title(session_db, session_id, user_message, title_callback)
+    # Collect all real user messages up to the title turn so the title model
+    # sees the full context, not just the latest message.
+    title_context = _collect_user_messages(
+        conversation_history, user_message, title_turn + 1
+    )
+
+    apply_instant_title(session_db, session_id, title_context, title_callback)
 
     thread = threading.Thread(
         target=auto_title_session,
-        args=(session_db, session_id, user_message),
+        args=(session_db, session_id, title_context),
         kwargs={
             "failure_callback": failure_callback,
             "main_runtime": main_runtime,
