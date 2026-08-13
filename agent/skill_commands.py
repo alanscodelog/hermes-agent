@@ -29,8 +29,8 @@ _SKILL_MULTI_HYPHEN = re.compile(r"-{2,}")
 # ``extract_user_instruction_from_skill_message`` recovers just the instruction.
 # The markers MUST stay byte-identical to the builders (``_build_skill_message``,
 # ``_scaffold_header``).
-_SKILL_INVOCATION_PREFIX = "[IMPORTANT: The user has invoked the "
-_SINGLE_SKILL_MARKER = "The full skill content is loaded below.]"
+_SKILL_INVOCATION_PREFIX = "[The user has invoked the skill "
+_SINGLE_SKILL_MARKER = "for you to follow:]"
 _SINGLE_SKILL_INSTRUCTION = "The user has provided the following instruction alongside the skill invocation: "
 _RUNTIME_NOTE = "\n\n[Runtime note:"
 _BUNDLE_MARKER = " skill bundle,"
@@ -302,7 +302,7 @@ def _scaffold_header(
     """Header for multi-skill messages (bundles and stacked invocations).
     ``subject`` must end in " skill bundle" so the bundle-format extractor applies."""
     lines = [
-        f"[IMPORTANT: The user has invoked the {subject}, "
+        f"[The user has invoked the skill {subject}, "
         f"loading {len(loaded_names)} skills together. Treat every skill below "
         "as active guidance for this turn.]",
         "",
@@ -481,8 +481,7 @@ def build_skill_invocation_message(
     loaded = _load_skill_payload(skill_info["skill_dir"], task_id=task_id) if skill_info else None
     if not loaded:
         return None
-    note = (f'[IMPORTANT: The user has invoked the "{loaded[2]}" skill, indicating they want '
-            "you to follow its instructions. The full skill content is loaded below.]")
+    note = (f'[The user has invoked the skill "{loaded[2]}" for you to follow:]')
     return _render_skill_block(loaded, note, task_id, user_instruction=user_instruction, runtime_note=runtime_note)
 
 

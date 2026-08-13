@@ -13,8 +13,8 @@
  * The markers below mirror `agent/skill_commands.py` byte for byte.
  */
 
-const INVOCATION_PREFIX = '[IMPORTANT: The user has invoked the '
-const SINGLE_MARKER = 'The full skill content is loaded below.]'
+const INVOCATION_PREFIX = '[The user has invoked the skill '
+const SINGLE_MARKER = 'for you to follow:]'
 const SINGLE_INSTRUCTION = 'The user has provided the following instruction alongside the skill invocation: '
 const RUNTIME_NOTE = '\n\n[Runtime note:'
 const BUNDLE_MARKER = ' skill bundle,'
