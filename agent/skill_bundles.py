@@ -344,8 +344,8 @@ def build_bundle_invocation_message(
     # Header — tells the agent this is a bundle, lists the skills, and
     # provides any author-supplied instruction.
     header_lines = [
-        f'[IMPORTANT: The user has invoked the "{bundle_name}" skill bundle, '
-        f"loading {len(loaded_names)} skills together. Treat every skill below "
+        f'[The user has invoked the skill "{bundle_name}" skill bundle, '
+        f'loading {len(loaded_names)} skills together. Treat every skill below '
         "as active guidance for this turn.]",
         "",
         f"Bundle: {bundle_name}",

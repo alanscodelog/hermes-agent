@@ -51,8 +51,8 @@ _SKILL_MULTI_HYPHEN = re.compile(r"-{2,}")
 # on purpose, and the bundle markers are asserted against the bundle builder in
 # tests/openviking_plugin/test_openviking.py::test_skill_markers_match_hermes_scaffolding.
 # ---------------------------------------------------------------------------
-_SKILL_INVOCATION_PREFIX = "[IMPORTANT: The user has invoked the "
-_SINGLE_SKILL_MARKER = "The full skill content is loaded below.]"
+_SKILL_INVOCATION_PREFIX = "[The user has invoked the skill "
+_SINGLE_SKILL_MARKER = "for you to follow:]"
 _SINGLE_SKILL_INSTRUCTION = (
     "The user has provided the following instruction alongside the skill invocation: "
 )
@@ -695,8 +695,7 @@ def build_skill_invocation_message(
         pass  # Non-critical — skill invocation proceeds regardless
 
     activation_note = (
-        f'[IMPORTANT: The user has invoked the "{skill_name}" skill, indicating they want '
-        "you to follow its instructions. The full skill content is loaded below.]"
+        f'[The user has invoked the skill "{skill_name}" for you to follow:]'
     )
     return _build_skill_message(
         loaded_skill,
@@ -824,7 +823,7 @@ def build_stacked_skill_invocation_message(
     # in extract_user_instruction_from_skill_message() applies unchanged.
     typed = " ".join(k for k in cmd_keys if k)
     header_lines = [
-        f'[IMPORTANT: The user has invoked the "{typed}" stacked skill bundle, '
+        f'[The user has invoked the skill "{typed}" stacked skill bundle, '
         f"loading {len(loaded_names)} skills together. Treat every skill below "
         "as active guidance for this turn.]",
         "",

@@ -4792,7 +4792,7 @@ def _build_job_prompt(
             parts.append("")
         parts.extend(
             [
-                f'[IMPORTANT: The user has invoked the "{skill_name}" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]',
+                f'[The user has invoked the skill "{skill_name}" for you to follow:]',
                 "",
                 content,
             ]
