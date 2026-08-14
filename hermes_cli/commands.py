@@ -313,6 +313,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
                execute="gateway_commands"),
     CommandDef("help", "Show available commands", "Info", busy_policy="dispatch",
                execute="gateway_help"),
+    CommandDef("todos", "Show the current list of agent-created todos", "Info",
+               busy_policy="dispatch"),
     CommandDef("restart", "Gracefully restart the gateway after draining active runs", "Session",
                gateway_only=True, busy_policy="dispatch"),
     CommandDef("usage", "Show token usage and rate limits; `reset` redeems a banked Codex limit reset", "Info",

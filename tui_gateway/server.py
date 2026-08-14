@@ -12890,6 +12890,24 @@ def _live_slash_command_output(sid: str, session: Optional[dict], name: str, arg
         return _format_live_tools_output(session)
     if name == "help":
         return _format_live_help_output()
+    if name == "todos":
+        if session is None:
+            return "No active agent -- send a message first."
+        agent = session.get("agent")
+        if agent is None:
+            return "No active agent -- send a message first."
+        store = getattr(agent, "_todo_store", None)
+        if store is None:
+            return "No todos have been created yet."
+        todos = store.get_todos()
+        if not todos:
+            return "No todos have been created yet."
+        lines = ["**Todos:**"]
+        for item in todos:
+            status = item.get("status", "pending")
+            checked = "☑" if item.get("done") or status == "completed" else "☐"
+            lines.append(f"{checked} [{status}] {item.get('content', '')}")
+        return "\n".join(lines)
     if name == "clear":
         return "Screen clear is terminal-only; desktop/TUI chat left unchanged."
     if name == "models":

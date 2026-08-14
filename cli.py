@@ -8035,7 +8035,32 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             f"Agent Running: {'Yes' if is_running else 'No'}",
         ])
         self._console_print("\n".join(lines), highlight=False, markup=False)
-    
+
+    def _show_todos(self):
+        """Show the current list of agent-created todos."""
+        agent = getattr(self, "agent", None)
+        if agent is None:
+            _cprint("  No active agent -- send a message first.")
+            return
+
+        store = getattr(agent, "_todo_store", None)
+        if store is None:
+            _cprint("  No todos have been created yet.")
+            return
+
+        todos = store.get_todos()
+        if not todos:
+            _cprint("  No todos have been created yet.")
+            return
+
+        lines = ["**Todos:**"]
+        for item in todos:
+            status = item.get("status", "pending")
+            checked = "☑" if item.get("done") or status == "completed" else "☐"
+            lines.append(f"{checked} [{status}] {item.get('content', '')}")
+
+        self._console_print("\n".join(lines), highlight=False, markup=False)
+
     def _fast_command_available(self) -> bool:
         try:
             from hermes_cli.models import model_supports_fast_mode
@@ -10486,6 +10511,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 execute_command("egress", CommandContext(surface="cli")).text,
                 highlight=False, markup=False,
             )
+        elif canonical == "todos":
+            self._show_todos()
         elif canonical == "statusbar":
             self._status_bar_visible = not self._status_bar_visible
             state = "visible" if self._status_bar_visible else "hidden"

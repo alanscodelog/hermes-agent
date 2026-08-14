@@ -14598,6 +14598,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "verbose": self._handle_verbose_command,
                 "footer": self._handle_footer_command,
                 "help": self._handle_help_command,
+                "todos": self._handle_todos_command,
                 "commands": self._handle_commands_command,
                 "profile": self._handle_profile_command,
                 "update": self._handle_update_command,

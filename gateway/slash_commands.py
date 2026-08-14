@@ -537,6 +537,32 @@ class GatewaySlashCommandsMixin:
             output = output[:3800] + "\n" + t("gateway.kanban.truncated_suffix")
         return output or t("gateway.kanban.no_output")
 
+    async def _handle_todos_command(self, event: MessageEvent) -> str:
+        """Handle /todos command — show the current todo list."""
+        session_key = self._session_key_for_source(event.source)
+        agent = await self._get_agent_for_session(session_key)
+
+        if agent is None or agent is _AGENT_PENDING_SENTINEL:
+            return "No active agent for this session."
+
+        store = getattr(agent, "_todo_store", None)
+        if store is None:
+            return "No todos have been created yet."
+
+        todos = store.get_todos()
+        if not todos:
+            return "No todos have been created yet."
+
+        lines = ["**Todos:**"]
+        for item in todos:
+            checked = "☑" if item.get("done") or item.get("status") == "completed" else "☐"
+            status = item.get("status", "pending")
+            content = item.get("content", "")
+            line = f"{checked} [{status}] {content}"
+            lines.append(line)
+
+        return "\n".join(lines)
+
     async def _handle_status_command(self, event: MessageEvent) -> str:
         """Handle /status command."""
         from gateway.run import _AGENT_PENDING_SENTINEL, _load_gateway_config, _resolve_gateway_model
