@@ -362,8 +362,12 @@ class SlashCommandCompleter(Completer):
             return None
         return word
 
-    def _phrase_completions(self, word: str, limit: int = 30):
-        """Yield completions for trigger phrases (``#phrase``)."""
+    def _phrase_completions(self, word: str, limit: int = 30, include_exact: bool = False):
+        """Yield completions for trigger phrases (``#phrase``).
+
+        With ``include_exact=True``, the key that exactly matches the typed
+        word is included too, so the menu stays open at a full trigger phrase.
+        """
         try:
             from hermes_cli.config import load_config
             config = load_config()
@@ -376,15 +380,19 @@ class SlashCommandCompleter(Completer):
             typed = word.lower()
             count = 0
             for key, value in sorted(all_phrases.items()):
-                if key.lower().startswith(typed) and key.lower() != typed:
-                    if count >= limit:
-                        break
-                    desc = str(value)[:60]
-                    short_desc = desc + ("..." if len(desc) > 60 else "")
-                    tag = "phrase" if key in phrases else "replace"
-                    yield _completion(
-                        str(value), word, key, f"{tag}: {short_desc}")
-                    count += 1
+                if not key.lower().startswith(typed):
+                    continue
+                is_exact = key.lower() == typed
+                if is_exact and not include_exact:
+                    continue
+                if count >= limit:
+                    break
+                desc = str(value)[:60]
+                short_desc = desc + ("..." if len(desc) > 60 else "")
+                tag = "phrase" if key in phrases else "replace"
+                yield _completion(
+                    str(value), word, key, f"{tag}: {short_desc}")
+                count += 1
         except Exception:
             pass
 
@@ -463,7 +471,8 @@ class SlashCommandCompleter(Completer):
             if ctx_word is not None:
                 yield from self._context_completions(ctx_word)
             elif phrase_word is not None:
-                yield from self._phrase_completions(phrase_word)
+                yield from self._phrase_completions(
+                    phrase_word, include_exact=True)
             elif path_word is not None:
                 yield from _path_completions(path_word)
             return
