@@ -1880,11 +1880,16 @@ class SlashCommandCompleter(Completer):
             return None
         return word
 
-    def _phrase_completions(self, word: str, limit: int = 30):
+    def _phrase_completions(
+        self, word: str, limit: int = 30, include_exact: bool = False
+    ):
         """Yield completions for trigger phrases (``#phrase``).
 
         Reads ``agent.triggerPhrases`` from config and suggests matching
         keys from both ``phrases`` and ``replacements`` dicts.
+
+        With ``include_exact=True``, the key that exactly matches the typed
+        word is included too, so the menu stays open at a full trigger phrase.
         """
         try:
             from hermes_cli.config import load_config
@@ -1902,20 +1907,28 @@ class SlashCommandCompleter(Completer):
             typed = word.lower()
             count = 0
             for key, value in sorted(all_phrases.items()):
-                if key.lower().startswith(typed) and key.lower() != typed:
-                    if count >= limit:
-                        break
-                    desc = str(value)[:60]
-                    short_desc = desc + ("..." if len(desc) > 60 else "")
-                    tag = "phrase" if key in phrases else "replace"
-                    # On accept, insert the instruction text (value) — not the key
-                    yield Completion(
-                        str(value),
-                        start_position=-len(word),
-                        display=key,
-                        display_meta=f"{tag}: {short_desc}",
-                    )
-                    count += 1
+                if not key.lower().startswith(typed):
+                    continue
+                is_exact = key.lower() == typed
+                if is_exact and not include_exact:
+                    continue
+                if count >= limit:
+                    break
+                desc = str(value)[:60]
+                short_desc = desc + ("..." if len(desc) > 60 else "")
+                tag = "phrase" if key in phrases else "replace"
+                # On accept, insert the instruction text (value) — not the key.
+                # For an exact match this replaces the typed word with its
+                # value; prompt_toolkit's no-op filter only applies when there
+                # is a single completion, so at an exact match the menu closes
+                # after Tab (same as any other single-suggestion completion).
+                yield Completion(
+                    str(value),
+                    start_position=-len(word),
+                    display=key,
+                    display_meta=f"{tag}: {short_desc}",
+                )
+                count += 1
         except Exception:
             pass
 
@@ -2333,7 +2346,9 @@ class SlashCommandCompleter(Completer):
             # Try # phrase completion (trigger phrases from config)
             phrase_word = self._extract_phrase_word(text)
             if phrase_word is not None:
-                yield from self._phrase_completions(phrase_word)
+                yield from self._phrase_completions(
+                    phrase_word, include_exact=True
+                )
                 return
             # Try file path completion for non-slash input
             path_word = self._extract_path_word(text)
