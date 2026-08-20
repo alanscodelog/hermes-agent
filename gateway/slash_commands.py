@@ -1054,7 +1054,11 @@ class GatewaySlashCommandsMixin:
             return False
 
     async def _resume_target_allowed(
-        self, source: SessionSource, target_id: str, allow_override: bool = False
+        self,
+        source: SessionSource,
+        target_id: str,
+        allow_override: bool = False,
+        cross_source: bool = False,
     ) -> bool:
         """Whether *source* may resume the persisted session *target_id*.
 
@@ -1064,10 +1068,25 @@ class GatewaySlashCommandsMixin:
         otherwise falls back to the DB row's source + user_id (the sessions
         table has no chat_id). An identity-bearing caller is allowed only when
         the row PROVES the same owner; a row that lacks enough ownership data
-        fails closed. An explicit admin ``--all`` override bypasses scoping.
+        fails closed. An explicit admin ``--all`` override bypasses scoping,
+        and an admin ``cross_source=True`` additionally permits rows whose
+        source differs from the caller's platform (e.g. resuming a CLI
+        session from a gateway thread) — still admin-gated, never open to
+        regular callers.
         """
-        if allow_override and self._resume_caller_is_admin(source):
-            return True
+        if self._resume_caller_is_admin(source):
+            if allow_override:
+                return True
+            # Cross-source resume (admin only): the row's source is expected
+            # to differ from the caller's platform, so the normal same-origin
+            # scoping below would always reject it. Verify the row actually
+            # exists, then allow — enumeration stays gated by /sessions --all.
+            if cross_source:
+                try:
+                    row = await self._session_db.get_session(target_id) or {}
+                except Exception:
+                    return False
+                return bool(row.get("id"))
         # Use the live origin only when it resolves to a real SessionSource; a
         # store that can't resolve it (or an unexpected lookup error) must not
         # silently allow/deny — fall through to the deterministic DB scoping.
@@ -4539,6 +4558,12 @@ class GatewaySlashCommandsMixin:
             return t("gateway.resume.parse_error", error=exc)
         allow_all = "--all" in parts
         allow_cross_room = "--cross-room" in parts
+        # Admins may resume across sources (e.g. a CLI session from a gateway
+        # thread). For non-admins --all is inert here: the guard below only
+        # honors it when _resume_caller_is_admin, so parsing it alone never
+        # widens scoping.
+        is_admin = self._resume_caller_is_admin(source)
+        cross_source = bool(allow_all and is_admin)
         name = " ".join(p for p in parts if p not in {"--all", "--cross-room"}).strip()
 
         # Strip common outer brackets/quotes users may type literally from the
@@ -4648,7 +4673,10 @@ class GatewaySlashCommandsMixin:
                     name=name,
                 )
         elif not await self._resume_target_allowed(
-            source, target_id, allow_override=(allow_all or allow_cross_room)
+            source,
+            target_id,
+            allow_override=(allow_all or allow_cross_room),
+            cross_source=cross_source,
         ):
             # IDOR guard: a session id/title is a routing handle, not authority.
             # Bind /resume to the caller's own platform/user/chat on every
@@ -4664,8 +4692,20 @@ class GatewaySlashCommandsMixin:
         # Clear any running agent for this session key
         self._release_running_agent_state(session_key)
 
-        # Switch the session entry to point at the old session
-        new_entry = await self.async_session_store.switch_session(session_key, target_id)
+        # Switch the session entry to point at the old session. Cross-source
+        # resume (admin --all) pins the resumed session's working directory on
+        # the entry so the next turn runs where that session ran — CLI rows
+        # carry their cwd in state.db, gateway rows don't need it.
+        _resume_cwd = None
+        if cross_source:
+            try:
+                _target_row = await self._session_db.get_session(target_id) or {}
+                _resume_cwd = str(_target_row.get("cwd") or "") or None
+            except Exception:
+                _resume_cwd = None
+        new_entry = await self.async_session_store.switch_session(
+            session_key, target_id, session_cwd=_resume_cwd
+        )
         if not new_entry:
             return t("gateway.resume.switch_failed")
 

@@ -22166,6 +22166,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             profile=getattr(context.source, "profile", "") or "",
             async_delivery=_async_delivery,
             cron_session="",
+            # Cross-source /resume pins the resumed CLI session's cwd on the
+            # entry; empty string keeps normal process/TERMINAL_CWD resolution.
+            cwd=getattr(context, "session_cwd", "") or "",
         )
 
     def _clear_session_env(self, tokens: list) -> None:

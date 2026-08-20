@@ -333,6 +333,9 @@ class SessionContext:
     session_id: str = ""
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # Working directory pinned on the session entry (cross-source /resume of a
+    # CLI session); flows through _set_session_env -> set_session_vars(cwd=...).
+    session_cwd: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -815,6 +818,11 @@ class SessionEntry:
     was_auto_reset: bool = False
     auto_reset_reason: Optional[str] = None  # "idle" or "daily"
     reset_had_activity: bool = False  # whether the expired session had any messages
+
+    # Working directory pinned for this entry (cross-source /resume of a CLI
+    # session). Flows through _set_session_env -> set_session_vars(cwd=...) ->
+    # agent.runtime_cwd so the resumed conversation runs where it ran.
+    session_cwd: Optional[str] = None
 
     # When this session was created by an auto-reset, the session_id of the
     # session it replaced.  Used to give Slack/Discord channels/threads a
@@ -3328,7 +3336,12 @@ class SessionStore:
             self._save()
             return entry
 
-    def switch_session(self, session_key: str, target_session_id: str) -> Optional[SessionEntry]:
+    def switch_session(
+        self,
+        session_key: str,
+        target_session_id: str,
+        session_cwd: Optional[str] = None,
+    ) -> Optional[SessionEntry]:
         """Switch a session key to point at an existing session ID.
 
         Used by ``/resume`` to restore a previously-named session.
@@ -3336,6 +3349,10 @@ class SessionStore:
         generating a fresh session ID, re-uses ``target_session_id`` so the
         old transcript is loaded on the next message. If the target session was
         previously ended, re-open it so gateway resume semantics match the CLI.
+
+        ``session_cwd`` pins a working directory on the new entry (cross-source
+        /resume of a CLI session); ``None`` clears any prior pin so the entry
+        falls back to process/TERMINAL_CWD resolution.
         """
         db_end_session_id = None
         new_entry = None
@@ -3364,6 +3381,7 @@ class SessionStore:
                 display_name=old_entry.display_name,
                 platform=old_entry.platform,
                 chat_type=old_entry.chat_type,
+                session_cwd=session_cwd if session_cwd else None,
             )
 
             self._entries[session_key] = new_entry
@@ -3929,5 +3947,6 @@ def build_session_context(
         context.session_id = session_entry.session_id
         context.created_at = session_entry.created_at
         context.updated_at = session_entry.updated_at
+        context.session_cwd = getattr(session_entry, "session_cwd", None) or ""
     
     return context
