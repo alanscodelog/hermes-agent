@@ -768,3 +768,92 @@ class TestSameMatrixRoomThreadScoping:
         assert runner._same_matrix_room(caller, victim_origin) is False
 
 
+    @pytest.mark.asyncio
+    async def test_resume_row_visible_blocks_cross_thread(self):
+        """End-to-end through the Matrix listing guard."""
+        runner = _make_runner()
+        runner._resume_caller_is_admin = lambda src: False
+        origin_thread_b = self._msrc(thread_id="thread-b")
+        runner._gateway_session_origin_for_id = lambda sid: origin_thread_b
+        row = {"id": "sid_thread_b"}
+        caller_thread_a = self._msrc(thread_id="thread-a")
+        assert await runner._resume_row_visible(caller_thread_a, row, allow_all=False) is False
+
+
+class TestResumeCrossSourceListing:
+    """#41220: the /resume listing FETCH is platform-scoped unless a configured
+    admin passes --all. The widened fetch is gated on the exact predicate
+    /sessions all uses, and _resume_row_visible still screens every row, so a
+    default install (no allow_admin_from) behaves byte-identically."""
+
+    @staticmethod
+    def _seed_cross_source_db(tmp_path):
+        from hermes_state import SessionDB
+        db = SessionDB(db_path=tmp_path / "state.db")
+        # session_key matches the event source in these tests (telegram dm
+        # 67890) so the non-admin room-scoped fetch still sees it.
+        sk = "agent:main:telegram:dm:67890"
+        db.create_session(
+            "tg_session", "telegram", user_id="12345", chat_id="67890",
+            session_key=sk,
+        )
+        db.set_session_title("tg_session", "Telegram Chat")
+        db.create_session("desktop_session", "tui", user_id=None)
+        db.set_session_title("desktop_session", "Desktop Deep Work")
+        db.create_session("tool_session", "tool")
+        db.set_session_title("tool_session", "Tool Noise")
+        db.create_session(
+            "current_session_001", "telegram", user_id="12345", chat_id="67890",
+            session_key=sk,
+        )
+        return db
+
+    @pytest.mark.asyncio
+    async def test_non_admin_all_stays_platform_scoped(self, tmp_path):
+        db = self._seed_cross_source_db(tmp_path)
+        event = _make_event(text="/resume --all")
+        runner = _make_runner(session_db=db, current_session_id="current_session_001",
+                              event=event)
+        runner._resume_caller_is_admin = lambda src: False
+        result = await runner._handle_resume_command(event)
+        assert "Telegram Chat" in result
+        assert "Desktop Deep Work" not in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_admin_without_all_stays_platform_scoped(self, tmp_path):
+        db = self._seed_cross_source_db(tmp_path)
+        event = _make_event(text="/resume")
+        runner = _make_runner(session_db=db, current_session_id="current_session_001",
+                              event=event)
+        runner._resume_caller_is_admin = lambda src: True
+        result = await runner._handle_resume_command(event)
+        assert "Telegram Chat" in result
+        assert "Desktop Deep Work" not in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_admin_all_lists_cross_source_with_label(self, tmp_path):
+        db = self._seed_cross_source_db(tmp_path)
+        event = _make_event(text="/resume --all")
+        runner = _make_runner(session_db=db, current_session_id="current_session_001",
+                              event=event)
+        runner._resume_caller_is_admin = lambda src: True
+        result = await runner._handle_resume_command(event)
+        assert "Telegram Chat" in result
+        assert "Desktop Deep Work" in result
+        # Cross rows are labelled with their surface; same-platform rows aren't.
+        assert "Desktop Deep Work — tui" in result
+        assert "Telegram Chat — " not in result
+        db.close()
+
+    @pytest.mark.asyncio
+    async def test_admin_all_excludes_tool_rows(self, tmp_path):
+        db = self._seed_cross_source_db(tmp_path)
+        event = _make_event(text="/resume --all")
+        runner = _make_runner(session_db=db, current_session_id="current_session_001",
+                              event=event)
+        runner._resume_caller_is_admin = lambda src: True
+        result = await runner._handle_resume_command(event)
+        assert "Tool Noise" not in result
+        db.close()
