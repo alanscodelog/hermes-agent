@@ -4091,6 +4091,18 @@ def compress_context(
     trigger: Why this attempt runs (``"overflow"`` for provider-rejected requests); defaults to manual/auto
     from ``force``. Feeds attempt telemetry only.
     """
+    # Manual /compress entry points (CLI, TUI) call this forwarder directly
+    # outside run_conversation's ambient scope and omit task_id, so it arrives
+    # as the "default" sentinel. Reads were recorded under the live turn's
+    # effective_task_id (agent._current_task_id), not "default" — resetting
+    # "default" clears an empty bucket and leaves the real dedup state intact,
+    # so post-compression re-reads hit "file unchanged" stubs and escalate to a
+    # hard BLOCK. Resolve to the live task id when no explicit one was passed.
+    if task_id == "default":
+        _live_task_id = getattr(agent, "_current_task_id", None)
+        if _live_task_id:
+            task_id = _live_task_id
+
     attempt = _begin_compression_attempt(
         agent, force=force, defer_notification=defer_context_engine_notification, trigger=trigger,
         approx_tokens=approx_tokens,
