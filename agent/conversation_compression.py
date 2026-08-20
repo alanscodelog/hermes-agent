@@ -2773,6 +2773,18 @@ def compress_context(
         prompt — the session is NOT rotated.  Callers should detect the
         no-op via ``len(returned) == len(input)`` and stop the retry loop.
     """
+    # Manual /compress entry points (CLI, TUI) call this forwarder directly
+    # outside run_conversation's ambient scope and omit task_id, so it arrives
+    # as the "default" sentinel. Reads were recorded under the live turn's
+    # effective_task_id (agent._current_task_id), not "default" — resetting
+    # "default" clears an empty bucket and leaves the real dedup state intact,
+    # so post-compression re-reads hit "file unchanged" stubs and escalate to a
+    # hard BLOCK. Resolve to the live task id when no explicit one was passed.
+    if task_id == "default":
+        _live_task_id = getattr(agent, "_current_task_id", None)
+        if _live_task_id:
+            task_id = _live_task_id
+
     _compressor_attempt_snapshot = _snapshot_compressor_attempt_state(
         agent.context_compressor
     )
