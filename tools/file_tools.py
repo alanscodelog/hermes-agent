@@ -1189,9 +1189,9 @@ _READ_TIMESTAMPS_CAP = 1000   # dict; external-edit detection for write/patch
 _NOT_FOUND_CAP = 500          # dict; per-task negative-result cache for missing paths
 _NOT_FOUND_TTL_SECONDS = 60.0 # short TTL — a path that didn't exist may be created soon
 _READ_DEDUP_STATUS_MESSAGE = (
-    "File unchanged since last read. The content from "
+    "File unchanged for the given lines since last read. The content from "
     "the earlier read_file result in this conversation is "
-    "still current — refer to that instead of re-reading."
+    "still current — refer to that instead of re-reading. If you need a different range, specify a different range. The deduping works by line ranges read."
 )
 
 
@@ -1822,16 +1822,14 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 2000, task_id: str =
 
                     if hits >= 2:
                         return tool_error(
-                            f"BLOCKED: You have called read_file on this "
-                            f"exact region {hits + 1} times and the file "
-                            "has NOT changed. STOP calling read_file for "
-                            "this path — the content from your earlier "
-                            "read_file result in this conversation is "
-                            "still current. Proceed with your task using "
-                            "the information you already have.",
-                            path=path,
-                            already_read=hits + 1,
-                        )
+                           f"BLOCKED: You have called read_file on this exact region {hits + 1} "
+                           "times and the file has NOT changed. The content from your earlier "
+                           "read_file result in this conversation is still current — refer to that. "
+                           f"To read a different part of the file, call with a different range "
+                           "(e.g. offset={first_unseen_line}); otherwise proceed with what you have.",
+                           path=path,
+                           already_read=hits + 1,
+                       )
 
                     return json.dumps({
                         "status": "unchanged",
