@@ -475,14 +475,13 @@ def _dedup_stub_or_block(task_data: dict, dedup_key: tuple, path: str) -> str:
         _cap_read_tracker_data(task_data)
 
     if hits >= 2:
+        first_unseen_line = dedup_key[0] + (dedup_key[3] - dedup_key[0]) + 1
         return tool_error(
-            f"BLOCKED: You have called read_file on this "
-            f"exact region {hits + 1} times and the file "
-            "has NOT changed. STOP calling read_file for "
-            "this path — the content from your earlier "
-            "read_file result in this conversation is "
-            "still current. Proceed with your task using "
-            "the information you already have.",
+            f"BLOCKED: You have called read_file on this exact region {hits + 1} "
+            "times and the file has NOT changed. The content from your earlier "
+            "read_file result in this conversation is still current — refer to that. "
+            f"To read a different part of the file, call with a different range "
+            f"(e.g. offset={first_unseen_line}); otherwise proceed with what you have.",
             path=path,
             already_read=hits + 1)
 
