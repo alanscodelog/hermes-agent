@@ -7,7 +7,7 @@ export interface TriggerState {
   /** True for a `/` typed mid-message — an inline skill/command reference in
    *  prose rather than a command invocation. Arg completion doesn't apply. */
   inline?: boolean
-  kind: '@' | '/' | ':'
+  kind: '@' | '/' | ':' | '#'
   query: string
   /** The `@kind:` prefix the user scoped the browse to, when there is one. */
   scope?: DirectiveScope
@@ -69,6 +69,12 @@ const SLASH_INLINE_TRIGGER_RE = /[\s\uFFFC](\/)([a-zA-Z][\w-]*)?$/
 // colon (`localhost:8080`, `note:`) never fires; two chars minimum so a bare
 // `:` or `:D` smiley doesn't open a popover the user didn't ask for.
 const EMOJI_TRIGGER_RE = /(?:^|[\s\uFFFC])(:)([a-zA-Z0-9_+-]{2,})$/
+// `#` trigger-phrase token (config `agent.triggerPhrases`). Mirrors the CLI's
+// `_extract_phrase_word`: a whitespace-delimited word starting with `#`. The
+// query excludes `#` so a second `#` in the token ends it (phrase keys never
+// contain `#`), and `#` must be preceded by a token boundary so `#` mid-word
+// (e.g. a C# mention inside prose) doesn't fire.
+const PHRASE_TRIGGER_RE = /(?:^|[\s\uFFFC])(#)([^\s#\uFFFC]*)$/
 
 const INLINE_IMAGE_SRC_RE = /<img\b[^>]*?\bsrc\s*=\s*["'](data:image\/[^"']+)["']/gi
 // Below this, an inline data URL is chrome rather than content — a spacer, a
@@ -216,6 +222,17 @@ export function detectTrigger(textBefore: string): TriggerState | null {
       tokenLength: 1 + query.length,
       value: scoped ? (scoped[2] ?? '') : query
     }
+  }
+
+  // After `@` so a directive value containing `#` (`@url:…#anchor`) still
+  // parses as an `@` query, and before emoji so a `#` token with a colon in
+  // it stays a phrase query rather than an emoji one.
+  const phrase = PHRASE_TRIGGER_RE.exec(textBefore)
+
+  if (phrase) {
+    const query = phrase[2]
+
+    return { kind: '#', query, tokenLength: 1 + query.length, value: query }
   }
 
   // After `@` so a directive starter's colon (`@file:`) stays an `@` query.
