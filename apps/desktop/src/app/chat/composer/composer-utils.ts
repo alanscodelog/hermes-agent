@@ -170,7 +170,11 @@ export function acceptsTriggerCompletion({
 
   // Space is slash-only (an `@` mention takes a literal space) and gated to a
   // non-empty query so a bare `/ ` still types a space.
-  return key === ' ' && kind === '/' && Boolean(query.trim()) && !freeTextArgStage
+  if (key === ' ') {
+    return kind === '/' && Boolean(query.trim()) && !freeTextArgStage
+  }
+
+  return false
 }
 
 export interface QueueEditState {
