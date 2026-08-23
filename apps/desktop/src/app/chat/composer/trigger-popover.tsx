@@ -55,7 +55,7 @@ const GROUP_HEADER_CLASS =
 interface ComposerTriggerPopoverProps {
   activeIndex: number
   items: readonly Unstable_TriggerItem[]
-  kind: '@' | '/' | ':'
+  kind: '@' | '/' | ':' | '#'
   loading: boolean
   onHover: (index: number) => void
   onPick: (item: Unstable_TriggerItem) => void
@@ -92,6 +92,7 @@ export function ComposerTriggerPopover({
   const copy = t.composer
   const isSlash = kind === '/'
   const isEmoji = kind === ':'
+  const isPhrase = kind === '#'
   const listRef = useRef<HTMLDivElement>(null)
   const hoverIndexRef = useRef(-1)
 
@@ -177,6 +178,10 @@ export function ComposerTriggerPopover({
             ) : isEmoji ? (
               <>
                 {copy.lookupTry} <span className="font-mono text-foreground/80">:joy:</span>.
+              </>
+            ) : isPhrase ? (
+              <>
+                {copy.lookupTry} <span className="font-mono text-foreground/80">#research</span>.
               </>
             ) : (
               <>
