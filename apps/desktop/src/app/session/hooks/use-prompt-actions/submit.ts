@@ -6,6 +6,7 @@ import { type ChatMessage, textPart } from '@/lib/chat-messages'
 import { optimisticAttachmentRef } from '@/lib/chat-runtime'
 import { sanitizeComposerInput } from '@/lib/composer-input-sanitize'
 import { setMutableRef } from '@/lib/mutable-ref'
+import { applyTriggerPhrases } from '@/lib/trigger-phrases'
 import {
   isVoicePlaybackActive,
   markVoicePlaybackInterrupted,
@@ -113,8 +114,16 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
 
   return useCallback(
     async (rawText: string, options?: SubmitTextOptions) => {
-      const visibleText = sanitizeComposerInput(rawText).trim()
+      let visibleText = sanitizeComposerInput(rawText).trim()
       const usingComposerAttachments = !options?.attachments
+
+      // `#phrase` trigger-phrase expansion (CLI parity): the tui_gateway's
+      // prompt.submit does NOT expand trigger phrases server-side, so the
+      // desktop applies the same rules client-side before sending. No-op when
+      // the message has no `#` token or no phrases are configured.
+      if (visibleText.includes('#')) {
+        visibleText = await applyTriggerPhrases(visibleText)
+      }
 
       // Drop undefined/null holes a session switch or draft restore can leave in
       // the attachments array (same bug class as AttachmentList #49624). Without

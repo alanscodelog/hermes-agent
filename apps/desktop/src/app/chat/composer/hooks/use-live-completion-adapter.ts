@@ -12,6 +12,10 @@ export interface CompletionEntry {
   /** Optional completion-action id. When set, picking the item runs that action
    *  (e.g. opening an overlay) instead of inserting a chip + waiting for submit. */
   action?: string
+  /** Optional plain text to insert verbatim on pick (no chip, no directive).
+   *  Used by `#phrase` completions, which expand the token to its instruction
+   *  text the way the CLI's tab-completion does. */
+  insertText?: string
 }
 
 export interface CompletionPayload {

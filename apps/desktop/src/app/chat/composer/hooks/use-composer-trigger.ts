@@ -76,6 +76,9 @@ interface UseComposerTriggerOptions {
   editorRef: RefObject<HTMLDivElement | null>
   /** `:joy` emoji completions — inserts the emoji character, never a chip. */
   emoji?: CompletionSource
+  /** `#phrase` trigger-phrase completions — inserts the instruction text as
+   *  plain text, never a chip. */
+  phrase?: CompletionSource
   /** Bank the pre-commit state so a popover pick is a single undo step. */
   recordUndoPoint?: () => void
   requestMainFocus: () => void
@@ -97,6 +100,7 @@ export function useComposerTrigger({
   draftRef,
   editorRef,
   emoji,
+  phrase,
   recordUndoPoint,
   requestMainFocus,
   setComposerText,
@@ -138,7 +142,7 @@ export function useComposerTrigger({
     // is present do we pay the cost of the full walk + DOM range work.
     const rawText = editor.textContent ?? ''
 
-    if (!rawText.includes('@') && !rawText.includes('/') && !rawText.includes(':')) {
+    if (!rawText.includes('@') && !rawText.includes('/') && !rawText.includes(':') && !rawText.includes('#')) {
       if (trigger) {
         setTrigger(null)
         resetTriggerActive()
@@ -181,7 +185,9 @@ export function useComposerTrigger({
         ? slash.adapter
         : trigger?.kind === ':'
           ? (emoji?.adapter ?? null)
-          : null
+          : trigger?.kind === '#'
+            ? (phrase?.adapter ?? null)
+            : null
 
   useEffect(() => {
     if (!trigger || !triggerAdapter?.search) {
@@ -206,7 +212,9 @@ export function useComposerTrigger({
         ? slash.loading
         : trigger?.kind === ':'
           ? (emoji?.loading ?? false)
-          : false
+          : trigger?.kind === '#'
+            ? (phrase?.loading ?? false)
+            : false
 
   // Suppress the "No matches" empty state once a slash command is past its name:
   // a no-arg command has nothing to offer, and a fully-typed arg commits on
@@ -348,6 +356,26 @@ export function useComposerTrigger({
     // inline (mid-message) pick never expands: it's a reference inside prose, so
     // there's no command invocation for the args to belong to.
     const command = (item.metadata as { command?: string } | undefined)?.command ?? ''
+
+    // `#phrase` picks are plain text by design — the CLI expands the token to
+    // its instruction value, and the desktop sends that text verbatim, so no
+    // chip, no directive, no slash handling.
+    if (trigger.kind === '#') {
+      const insertText = (item.metadata as { insertText?: unknown } | undefined)?.insertText
+      const insert = typeof insertText === 'string' ? insertText : item.label
+      const followedBySpace = /^\s/.test(composerPlainText(editor).slice(caretOffsetInEditor(editor)))
+      const fragment = document.createDocumentFragment()
+
+      fragment.append(document.createTextNode(followedBySpace ? insert.trimEnd() : insert))
+
+      if (!replaceBeforeCaret(editor, trigger.tokenLength, fragment)) {
+        rebuildAround(insert)
+      }
+
+      finish(false)
+
+      return
+    }
 
     const argumentMode = desktopSlashCommandArgumentMode(command)
     const expandsToArgs = trigger.kind === '/' && !trigger.inline && !serialized.includes(' ') && argumentMode !== null

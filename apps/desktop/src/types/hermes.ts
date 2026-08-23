@@ -326,6 +326,12 @@ export interface HermesConfig {
     reasoning_effort?: string
     personalities?: Record<string, unknown>
     service_tier?: string
+    /** `agent.triggerPhrases` — `#phrase` completions + submit-time expansion. */
+    triggerPhrases?: {
+      instructions?: string
+      phrases?: Record<string, string>
+      replacements?: Record<string, string>
+    }
   }
   display?: {
     personality?: string
