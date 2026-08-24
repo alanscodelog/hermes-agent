@@ -9,7 +9,7 @@
   stdenv,
   makeWrapper,
   callPackage,
-  python312,
+  python311,
   electron,
   ripgrep,
   git,
@@ -107,8 +107,8 @@ let
     wl-clipboard
     xclip
     portaudio
-    python312.pkgs.sounddevice
-    python312.pkgs.numpy
+    python311.pkgs.sounddevice
+    python311.pkgs.numpy
   ];
 
   libPaths = [ "${portaudio}/lib" ];
@@ -116,12 +116,12 @@ let
 
   runtimePath = lib.makeBinPath runtimeDeps;
 
-  sitePackagesPath = python312.sitePackages;
+  sitePackagesPath = python311.sitePackages;
 
   # Walk propagatedBuildInputs to include transitive Python deps in PYTHONPATH.
   # Without this, a plugin listing e.g. requests as a dep would fail at runtime
   # if requests isn't already in the sealed uv2nix venv.
-  allExtraPythonPackages = python312.pkgs.requiredPythonModules extraPythonPackages;
+  allExtraPythonPackages = python311.pkgs.requiredPythonModules extraPythonPackages;
 
   pythonPath = lib.makeSearchPath sitePackagesPath allExtraPythonPackages;
 
