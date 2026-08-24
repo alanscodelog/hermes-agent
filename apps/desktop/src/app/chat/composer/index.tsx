@@ -53,8 +53,8 @@ import { useComposerUndo } from './hooks/use-composer-undo'
 import { useComposerUrlDialog } from './hooks/use-composer-url-dialog'
 import { useComposerVoice } from './hooks/use-composer-voice'
 import { useEmojiCompletions } from './hooks/use-emoji-completions'
-import { usePhraseCompletions } from './hooks/use-phrase-completions'
 import { useComposerMicroActions } from './hooks/use-micro-actions'
+import { usePhraseCompletions } from './hooks/use-phrase-completions'
 import { useSlashCompletions } from './hooks/use-slash-completions'
 import { useSessionStatusPresence } from './hooks/use-status-presence'
 import { ActionBadges } from './micro-actions'
@@ -368,7 +368,17 @@ export function ChatBar({
     triggerItems,
     triggerKeyConsumedRef,
     triggerLoading
-  } = useComposerTrigger({ at, draftRef, editorRef, emoji, phrase, recordUndoPoint, requestMainFocus, setComposerText, slash })
+  } = useComposerTrigger({
+    at,
+    draftRef,
+    editorRef,
+    emoji,
+    phrase,
+    recordUndoPoint,
+    requestMainFocus,
+    setComposerText,
+    slash
+  })
 
   // Pull the live contentEditable text into draftRef + the AUI composer state
   // (which drives `hasComposerPayload` → the send button). Shared by the input
