@@ -82,13 +82,16 @@ class _OpenWakeWordEngine(_Engine):
         # Default (or explicit "hey_hermes") → the bundled model; built-in names / paths as-is.
         if model_ref.lower() in ww._BUNDLED_MODEL_ALIASES:
             model_ref = ww._bundled_wakeword_path(framework)
-        # download_models() also fetches the shared feature models (melspectrogram +
-        # embedding) needed for ANY model, so a custom path must call it too.
-        try:
-            openwakeword.utils.download_models([model_ref])
-        except Exception as e:  # pragma: no cover - network/path dependent
-            logger.debug("openwakeword model download skipped: %s", e)
-        self._model = Model(wakeword_models=[model_ref], inference_framework=framework)
+        # openWakeWord needs its shared feature models (melspectrogram + embedding)
+        # for ANY model. Fetch them into the writable HERMES_HOME cache (never into
+        # the read-only install dir) and pass the paths explicitly, so a fresh
+        # install under Nix/Docker works without writing to site-packages.
+        feature_paths = ww._openwakeword_feature_model_paths(model_ref, framework)
+        self._model = Model(
+            wakeword_models=[model_ref],
+            inference_framework=framework,
+            **feature_paths,
+        )
         self._labels = list(self._model.models.keys())
 
     @staticmethod
