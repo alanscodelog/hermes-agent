@@ -11,8 +11,14 @@ required to say "hey hermes".
   Redistribution is permitted under the openWakeWord license.
 - **Label:** the model registers as `hey_hermes` (matches the filename).
 - **Runtime:** openWakeWord's shared feature-extraction models (melspectrogram +
-  embedding) are NOT bundled here — they are fetched once on first use by
-  `tools/wake_word.py` via `openwakeword.utils.download_models()`.
+  embedding) are NOT bundled here. `tools/wake_word.py` resolves them from
+  `HERMES_WAKE_WORD_MODELS` when set (the Nix desktop derivation bundles them
+  at build time and points the var there), otherwise fetches them once on
+  first use into the writable `~/.hermes/cache/wakewords/openwakeword/`
+  directory — never into the install dir, which is read-only under Nix/frozen
+  installs — and passes them to the engine as explicit model paths. Built-in
+  wake words (e.g. `hey_jarvis`) auto-download their own model file into the
+  same directory on first use.
 
 To use a different phrase, train your own model and point
 `wake_word.openwakeword.model` at its path, or set a built-in openWakeWord name

@@ -233,6 +233,11 @@ wake = [
   # Upstream declares tflite-runtime for Linux only; ai-edge-litert is the
   # macOS equivalent, bridged in tools/wake_word.py.
   "ai-edge-litert==2.1.6; platform_system == 'Darwin'",
+  # Direct (not just transitive) so the tool.uv.sources override below
+  # applies — uv ignores sources for other packages' requirements (#11388).
+  # Satisfies openwakeword's own tflite-runtime pin on cp312, where real
+  # wheels don't exist. Python <= 3.11 keeps using the real wheels.
+  "tflite-runtime==2.14.0; platform_system == 'Linux' and python_version >= '3.12'",
 ]
 honcho = ["honcho-ai==2.2.0"]
 # Cloud memory providers — opt-in, lazy-installed via tools/lazy_deps.py
@@ -435,6 +440,22 @@ exclude-newer = "14 days"
 # an exact pin and would only delay the reviewed version 14 days.
 exclude-newer-package = { vercel = false, nemo-relay = false, huggingface_hub = false, h2 = false, aiohttp = false, cryptography = false, defusedxml = false, python-olm = false, unpaddedbase64 = false, setuptools = false, pillow = false, mcp = false, firecrawl-anydoc = false }
 
+[tool.uv.workspace]
+# The tflite-runtime shim is a workspace member so uv2nix can build it from
+# the directory source pinned in [tool.uv.sources] above (it resolves member
+# packages against the workspace root).
+members = ["tools/wakewords/tflite-runtime-shim"]
+
+[tool.uv.sources]
+# openwakeword pins `tflite-runtime>=2.8` on Linux, but Google ships
+# interpreter wheels only up to cp311 — unsatisfiable on the cp312 venv this
+# repo builds under Nix. The vendored shim re-exports ai-edge-litert (which
+# HAS cp312 wheels) under the module name openwakeword imports. Marker keeps
+# real tflite-runtime wheels in play for Python <= 3.11.
+tflite-runtime = [
+  { workspace = true, marker = "python_version >= '3.12'" },
+]
+
 [tool.setuptools]
 # Top-level single-file modules (not packages). Without this, uv2nix's
 # sealed venv is missing hermes_constants, run_agent, etc.
@@ -475,6 +496,13 @@ gateway = ["assets/**/*"]
 # sealed wheels with the plugin Python modules; without this declaration the
 # wheel contains adapters but discovery finds zero bundled plugins.
 plugins = ["**/plugin.yaml", "**/plugin.yml"]
+# tools/wakewords/ holds the bundled "hey hermes" wake-word models
+# (hey_hermes.onnx / .tflite), loaded via tools/wake_word.py's
+# _bundled_wakeword_path() relative to the installed tools/ package dir.
+# Without this declaration the sealed wheel (uv2nix) ships the shim's Python
+# files but not the model artifacts, so the default wake word fails with
+# "could not find .../wakewords/hey_hermes.onnx" at runtime.
+tools = ["wakewords/*.onnx", "wakewords/*.tflite"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

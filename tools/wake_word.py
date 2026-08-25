@@ -100,6 +100,54 @@ def _bundled_wakeword_path(framework: str = "onnx") -> str:
     return os.path.join(os.path.dirname(__file__), "wakewords", f"{_BUNDLED_MODEL_NAME}.{ext}")
 
 
+def _openwakeword_feature_models_dir() -> str:
+    """Dir holding openWakeWord's shared feature models (melspectrogram + embedding).
+
+    openWakeWord's ``download_models()`` defaults to writing into the installed
+    package's ``resources/models/`` — read-only under Nix (and any frozen
+    install), so the download fails silently and the engine later dies on a
+    missing melspectrogram. Resolution order:
+
+    1. ``HERMES_WAKE_WORD_MODELS`` — set by the Nix desktop derivation, which
+       bundles the models at build time (no network at first use).
+    2. ``~/.hermes/cache/wakewords/openwakeword`` — writable, same cache the
+       sherpa engine uses; feature models are fetched here on first use.
+    """
+    env_dir = os.environ.get("HERMES_WAKE_WORD_MODELS", "").strip()
+    if env_dir and os.path.isdir(env_dir):
+        return env_dir
+    from hermes_constants import get_hermes_home
+
+    return os.path.join(str(get_hermes_home()), "cache", "wakewords", "openwakeword")
+
+
+def _openwakeword_feature_model_paths(model_ref: str, framework: str) -> Dict[str, str]:
+    """Ensure openWakeWord's shared feature models exist; return explicit paths.
+
+    Returns the ``melspec_model_path`` / ``embedding_model_path`` kwargs for
+    ``openwakeword.model.Model`` so it never looks inside site-packages. When
+    the models are missing (and the dir is writable), fetch them via
+    ``download_models(target_directory=...)``. A built-in model name
+    additionally pulls its pretrained model into the same directory; a custom
+    path matches nothing in the catalog and is a no-op beyond the base models.
+    """
+    import openwakeword
+
+    target_dir = _openwakeword_feature_models_dir()
+    ext = "tflite" if str(framework).strip().lower() == "tflite" else "onnx"
+    melspec = os.path.join(target_dir, f"melspectrogram.{ext}")
+    embedding = os.path.join(target_dir, f"embedding_model.{ext}")
+    if not (os.path.exists(melspec) and os.path.exists(embedding)):
+        try:
+            openwakeword.utils.download_models([model_ref], target_directory=target_dir)
+        except Exception as e:  # pragma: no cover - network/path dependent
+            logger.debug("openwakeword model download skipped: %s", e)
+    return {
+        "melspec_model_path": melspec,
+        "embedding_model_path": embedding,
+    }
+
+
 def _is_macos_arm64() -> bool:
     import platform
 
@@ -578,17 +626,17 @@ class _OpenWakeWordEngine(_Engine):
             model_ref = _bundled_wakeword_path(framework)
 
         # openWakeWord needs its shared feature models (melspectrogram + embedding)
-        # for ANY model — download_models() fetches those first on every call, so a
-        # custom path must call it too, else a fresh install crashes on a missing
-        # melspectrogram.onnx. A built-in name additionally pulls that pretrained
-        # model; a path matches nothing in the catalog and is a no-op beyond base.
-        try:
-            openwakeword.utils.download_models([model_ref])
-        except Exception as e:  # pragma: no cover - network/path dependent
-            logger.debug("openwakeword model download skipped: %s", e)
+        # for ANY model. Fetch them into the writable HERMES_HOME cache (never into
+        # the read-only install dir) and pass the paths explicitly, so a fresh
+        # install under Nix/Docker works without writing to site-packages.
+        feature_paths = _openwakeword_feature_model_paths(model_ref, framework)
         models = [model_ref]
 
-        self._model = Model(wakeword_models=models, inference_framework=framework)
+        self._model = Model(
+            wakeword_models=models,
+            inference_framework=framework,
+            **feature_paths,
+        )
         self._labels = list(self._model.models.keys())
 
     def process(self, frame) -> bool:

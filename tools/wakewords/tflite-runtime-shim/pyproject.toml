@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tflite-runtime"
+version = "2.14.0"
+description = "Local shim: LiteRT (ai-edge-litert) exposed under the tflite_runtime module name for Python >= 3.12"
+# >=3.11 (not >=3.12) so the workspace-wide Python floor stays 3.11; the
+# [tool.uv.sources] marker is what actually gates when this package installs.
+requires-python = ">=3.11"
+dependencies = ["ai-edge-litert==2.1.6; platform_system == 'Linux'"]
+
+[tool.setuptools.packages.find]
+include = ["tflite_runtime*"]

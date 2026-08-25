@@ -184,16 +184,31 @@ def test_requirements_deps_present_but_no_audio_hint(monkeypatch):
 # ── openWakeWord engine (bundled model + base-model fetch) ───────────────
 
 
-def _install_fake_openwakeword(monkeypatch):
+def _install_fake_openwakeword(monkeypatch, tmp_path=None):
     """Swap in a fake ``openwakeword`` so the engine builds with no network.
 
-    Returns a ``calls`` dict recording every ``download_models`` invocation.
+    Returns a ``calls`` dict recording every ``download_models`` invocation
+    (names + target directory). When ``tmp_path`` is given, the fake writes
+    the feature-model files ``download_models`` would have fetched, so the
+    engine's explicit path kwargs point at real files.
     """
     calls = {"download": []}
 
+    def _fake_download(names=[], target_directory=None):
+        calls["download"].append((list(names), target_directory))
+        if target_directory:
+            os.makedirs(target_directory, exist_ok=True)
+            for ext in ("onnx", "tflite"):
+                for name in ("melspectrogram", "embedding_model"):
+                    p = os.path.join(target_directory, f"{name}.{ext}")
+                    if not os.path.exists(p):
+                        with open(p, "wb") as f:
+                            f.write(b"\x00" * 64)
+
     class _FakeModel:
-        def __init__(self, wakeword_models, inference_framework="onnx"):
+        def __init__(self, wakeword_models, inference_framework="onnx", **kwargs):
             self.wakeword_models = list(wakeword_models)
+            self.feature_kwargs = dict(kwargs)
             self.models = {"hey_hermes": object()}
 
         def predict(self, frame):
@@ -203,27 +218,37 @@ def _install_fake_openwakeword(monkeypatch):
             pass
 
     oww = types.ModuleType("openwakeword")
-    oww.utils = types.SimpleNamespace(
-        download_models=lambda names=[]: calls["download"].append(list(names))
-    )
+    oww.utils = types.SimpleNamespace(download_models=_fake_download)
     model_mod = types.ModuleType("openwakeword.model")
     model_mod.Model = _FakeModel
 
     monkeypatch.setitem(sys.modules, "openwakeword", oww)
     monkeypatch.setitem(sys.modules, "openwakeword.model", model_mod)
     monkeypatch.setattr("tools.lazy_deps.ensure", lambda *a, **k: None)
+    if tmp_path is not None:
+        from hermes_constants import get_hermes_home
+
+        monkeypatch.setattr(
+            "hermes_constants.get_hermes_home", lambda: tmp_path
+        )
     return calls
 
 
-def test_openwakeword_ensures_base_models_for_custom_path(monkeypatch):
+def test_openwakeword_ensures_base_models_for_custom_path(monkeypatch, tmp_path):
     # Regression: a custom ``.onnx`` path used to skip download_models entirely,
     # so a fresh install crashed at load time on a missing melspectrogram.onnx.
-    # The base feature models must be ensured for a custom path too.
-    calls = _install_fake_openwakeword(monkeypatch)
+    # The base feature models must be ensured for a custom path too — and into
+    # the writable HERMES_HOME cache, never the (read-only) install dir.
+    calls = _install_fake_openwakeword(monkeypatch, tmp_path)
     eng = ww._OpenWakeWordEngine(
         {"provider": "openwakeword", "openwakeword": {"model": "/models/hey_hermes.onnx"}}
     )
-    assert calls["download"] == [["/models/hey_hermes.onnx"]]
+    (names, target) = calls["download"][0]
+    assert names == ["/models/hey_hermes.onnx"]
+    assert target == str(tmp_path / "cache" / "wakewords" / "openwakeword")
+    # The explicit feature paths must point at the cache, not site-packages.
+    assert eng._model.feature_kwargs["melspec_model_path"].startswith(target)
+    assert "melspectrogram.onnx" in eng._model.feature_kwargs["melspec_model_path"]
     assert eng._labels == ["hey_hermes"]
 
 
@@ -269,15 +294,34 @@ def test_macos_arm64_prefers_tflite_on_this_host():
     ) == "tflite"
 
 
-def test_explicit_framework_kept_where_onnx_works(monkeypatch):
+def test_feature_models_dir_prefers_env_var(monkeypatch, tmp_path):
+    # The Nix desktop derivation bundles the feature models at build time and
+    # points HERMES_WAKE_WORD_MODELS at them; that dir must win over the
+    # HERMES_HOME cache, and no download may be attempted from it.
+    models_dir = tmp_path / "nix-models"
+    models_dir.mkdir()
+    for name in ("melspectrogram.onnx", "embedding_model.onnx"):
+        (models_dir / name).write_bytes(b"\x00" * 64)
+    calls = _install_fake_openwakeword(monkeypatch, tmp_path / "home")
+    monkeypatch.setenv("HERMES_WAKE_WORD_MODELS", str(models_dir))
+    eng = ww._OpenWakeWordEngine(
+        {"provider": "openwakeword", "openwakeword": {"inference_framework": "onnx"}}
+    )
+    assert calls["download"] == []  # everything present: nothing to fetch
+    assert eng._model.feature_kwargs["melspec_model_path"] == str(
+        models_dir / "melspectrogram.onnx"
+    )
+
+
+def test_explicit_framework_kept_where_onnx_works(monkeypatch, tmp_path):
     # An operator who pins a backend keeps it everywhere ONNX actually works.
-    calls = _install_fake_openwakeword(monkeypatch)
+    calls = _install_fake_openwakeword(monkeypatch, tmp_path)
     monkeypatch.setattr(ww, "_is_macos_arm64", lambda: False)
     ww._OpenWakeWordEngine(
         {"provider": "openwakeword", "openwakeword": {"inference_framework": "onnx"}}
     )
-    (downloaded,) = calls["download"]
-    assert downloaded == [ww._bundled_wakeword_path("onnx")]
+    (names, _target) = calls["download"][0]
+    assert names == [ww._bundled_wakeword_path("onnx")]
 
 
 def test_empty_framework_falls_back_to_platform_default(monkeypatch):
@@ -312,7 +356,9 @@ def _openwakeword_engine_with_scores(monkeypatch, cfg_wake, scores):
             pass
 
     oww = types.ModuleType("openwakeword")
-    oww.utils = types.SimpleNamespace(download_models=lambda names=[]: None)
+    oww.utils = types.SimpleNamespace(
+        download_models=lambda names=[], target_directory=None: None
+    )
     model_mod = types.ModuleType("openwakeword.model")
     model_mod.Model = _ScriptedModel
     monkeypatch.setitem(sys.modules, "openwakeword", oww)

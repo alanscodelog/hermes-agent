@@ -8,6 +8,7 @@
   lib,
   stdenv,
   makeWrapper,
+  fetchurl,
   callPackage,
   python312,
   electron,
@@ -92,6 +93,49 @@ let
   bundledOptionalMcps = lib.cleanSourceWith {
     src = ../optional-mcps;
     filter = path: _type: !(lib.hasInfix "/__pycache__/" path);
+  };
+
+  # openWakeWord's shared feature models (melspectrogram + embedding, onnx and
+  # tflite variants). Upstream ships them only as release assets — the pip
+  # package has no resources/models/ and openwakeword.utils.download_models()
+  # writes into the INSTALLED package dir, which is read-only in the Nix store.
+  # Fetch them at build time (pinned by sha256) and expose the dir via
+  # HERMES_WAKE_WORD_MODELS; tools/wake_word.py passes the paths straight into
+  # Model() and skips the write. Same bare-data-dir pattern as locales.
+  bundledWakeModels = stdenv.mkDerivation {
+    name = "openwakeword-feature-models";
+    dontUnpack = true;
+    srcs = [
+      (fetchurl {
+        url = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/melspectrogram.tflite";
+        sha256 = "96fa0adccb6e8cf95cb14465409a1a2898ee4a96a85bb9ed3c7eb0e68bf163e8";
+        name = "melspectrogram.tflite";
+      })
+      (fetchurl {
+        url = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/embedding_model.tflite";
+        sha256 = "c0aea21eb84a4ce90a08c870da41b7a7173b45269e6a3207c71d67c40f3a59d8";
+        name = "embedding_model.tflite";
+      })
+      (fetchurl {
+        url = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/melspectrogram.onnx";
+        sha256 = "ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f";
+        name = "melspectrogram.onnx";
+      })
+      (fetchurl {
+        url = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/embedding_model.onnx";
+        sha256 = "70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f";
+        name = "embedding_model.onnx";
+      })
+    ];
+    installPhase = ''
+      mkdir -p $out
+      for f in $srcs; do
+        # Store paths are <32-char-hash>-<name>; strip the hash so the file
+        # lands as its bare name (melspectrogram.onnx, etc.) — openwakeword
+        # looks for the bare name inside HERMES_WAKE_WORD_MODELS.
+        cp "$f" "$out/$(basename "$f" | sed 's/^[a-z0-9]\{32\}-//')"
+      done
+    '';
   };
 
   runtimeDeps = [
@@ -194,7 +238,8 @@ stdenv.mkDerivation (finalAttrs: {
           --set HERMES_TUI_DIR $out/ui-tui \
           --set-default HERMES_BIN $out/bin/hermes \
           --set HERMES_PYTHON ${hermesVenv}/bin/python3 \
-          --set HERMES_NODE ${lib.getExe hermesNpmLib.nodejs}${
+          --set HERMES_NODE ${lib.getExe hermesNpmLib.nodejs} \
+          --set HERMES_WAKE_WORD_MODELS ${bundledWakeModels}${
             # Fold the line continuation INTO the optionalString: a bare
             # `\` on the line above an empty expansion would dangle onto a
             # blank line, ending the makeWrapper command early and running
