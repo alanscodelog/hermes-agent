@@ -41,6 +41,7 @@
           "tts-premium"
           "vercel"
           "voice"
+          "wake"
         ]
         # matrix is Linux-only (oqs/liboqs lacks aarch64-darwin wheels).
         ++ lib.optionals pkgs.stdenv.isLinux [ "matrix" ];

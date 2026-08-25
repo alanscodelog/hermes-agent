@@ -2,6 +2,7 @@
 {
   python312,
   lib,
+  pkgs,
   callPackage,
   uv2nix,
   pyproject-nix,
@@ -110,6 +111,24 @@ let
           overlay
           buildSystemOverrides
           pythonPackageOverrides
+          # sherpa-onnx's manylinux wheel dynamically links libonnxruntime.so;
+          # auto-patchelf resolves it from nixpkgs' onnxruntime.
+          (final: prev: {
+            sherpa-onnx = prev.sherpa-onnx.overrideAttrs (old: {
+              buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.onnxruntime ];
+            });
+
+            # ai-edge-litert bundles vendor plugins for accelerators that
+            # don't exist on NixOS (Intel OpenVINO, Qualcomm QNN). Those
+            # optional .so files fail auto-patchelf; ignore them — LiteRT
+            # dlopens the CPU interpreter without them.
+            ai-edge-litert = prev.ai-edge-litert.overrideAttrs (old: {
+              preFixup = (old.preFixup or "") + ''
+                addAutoPatchelfSearchPath
+                appendToVar autoPatchelfIgnoreMissingDeps libopenvino.so.2630 libopenvino_tensorflow_lite_frontend.so.2630 libQnnHtp.so libQnnIr.so libQnnSaver.so libQnnSystem.so
+              '';
+            });
+          })
           # ``setup.py`` permits wheel/sdist creation only from the sealed
           # Hermes derivation. This is deliberately a derivation environment
           # variable, not a devShell variable: ``nix develop -c uv build``
