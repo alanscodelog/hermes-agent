@@ -20,7 +20,7 @@ import shlex
 from pathlib import Path
 from typing import Dict, Any, Optional, Set
 
-from agent.prompt_builder import _scan_context_content
+from agent.prompt_builder import _expand_context_inline_shell, _scan_context_content
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,9 @@ class SubdirectoryHintTracker:
             except (OSError, UnicodeDecodeError):
                 continue
             if content:
+                # Expand first so the seeded digest matches what
+                # _load_hints_for_directory will compute for the same file.
+                content = _expand_context_inline_shell(content, candidate, filename)
                 self._loaded_digests.add(
                     hashlib.sha256(content.encode("utf-8")).hexdigest()
                 )
@@ -288,10 +291,12 @@ class SubdirectoryHintTracker:
                 content = hint_path.read_text(encoding="utf-8").strip()
                 if not content:
                     continue
-                # Skip content we've already injected. The same AGENTS.md is
-                # routinely reachable through several paths (symlinked shared
-                # workspaces, hardlinks, copied backups); re-sending it burns
-                # context for zero new information.
+                # Inline-shell expansion (gated + trust-checked like startup
+                # loading), then the same security scan as startup loading.
+                content = _expand_context_inline_shell(content, hint_path, filename)
+                # Dedup on the EXPANDED content: two copies of the same file
+                # reached via different paths are duplicates only if they
+                # expand identically (trust status can differ per path).
                 digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
                 if digest in self._loaded_digests:
                     logger.debug(
@@ -301,7 +306,6 @@ class SubdirectoryHintTracker:
                     )
                     break
                 self._loaded_digests.add(digest)
-                # Same security scan as startup context loading
                 content = _scan_context_content(content, filename)
                 if len(content) > _MAX_HINT_CHARS:
                     content = (

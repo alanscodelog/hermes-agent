@@ -882,6 +882,16 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         context_parts.append(system_message)
 
     if not agent.skip_context_files:
+        # Register the interactive callback BEFORE loading context files so
+        # untrusted !`cmd` snippets can prompt the user (see
+        # prompt_builder._expand_context_inline_shell). Headless surfaces
+        # (cron, kanban, delegate) never set one, so untrusted snippets stay
+        # literal there.
+        from agent.prompt_builder import set_context_inline_shell_callback
+
+        set_context_inline_shell_callback(
+            getattr(agent, "context_inline_shell_callback", None)
+        )
         # Prefer the configured TERMINAL_CWD (gateway mode). When unset (local
         # CLI), None lets build_context_files_prompt fall back to the launch
         # dir — the user's real cwd there, but the install dir for the gateway

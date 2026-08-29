@@ -2247,6 +2247,38 @@ DEFAULT_CONFIG = {
         },
     },
 
+    # Context files — project instruction files (AGENTS.md, CLAUDE.md,
+    # .hermes.md, .cursorrules, SOUL.md, ...) loaded into the system prompt.
+    #
+    # Inline shell expansion for context files works like skills.inline_shell:
+    # !`cmd` snippets have their stdout spliced in at load time. Context files
+    # are repo-controlled and can be untrusted in shared/cloned repos, so the
+    # default posture is stricter than skills:
+    #
+    #   inline_shell — master gate. Off by default. When off, no context-file
+    #     snippet runs, and !`cmd` text stays literal in the prompt.
+    #   inline_shell_trusted_dirs — allowlist of directories whose context
+    #     files may expand snippets without asking. A file is trusted when it
+    #     sits at or under any listed path (paths may use ~ and env vars).
+    #     Empty by default: EVERY context file is untrusted, so enabling
+    #     inline_shell prompts before expanding (see inline_shell_prompt).
+    #     Add your own dirs here, e.g. ["~/code/myproject", "~/.hermes"], to
+    #     skip the prompt for files you control.
+    #   inline_shell_prompt — when true, a context file OUTSIDE the trusted
+    #     dirs that contains !`cmd` snippets pauses and asks the user before
+    #     expanding (CLI/TUI surfaces with a live user). On headless surfaces
+    #     (gateway, cron, kanban) where no one can answer, the snippet is
+    #     skipped and left literal instead of guessing.
+    #
+    # The security scan, size caps, and truncation always apply to the FINAL
+    # assembled content — expanded output is scanned, not just the raw file.
+    "context_files": {
+        "inline_shell": False,
+        "inline_shell_timeout": 10,
+        "inline_shell_trusted_dirs": [],
+        "inline_shell_prompt": True,
+    },
+
     # Skills — external skill directories for sharing skills across tools/agents.
     # Each path is expanded (~, ${VAR}) and resolved.  Read-only — skill creation
     # always goes to ~/.hermes/skills/.

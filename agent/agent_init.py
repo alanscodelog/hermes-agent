@@ -568,6 +568,7 @@ def init_agent(
     thinking_callback: callable = None,
     reasoning_callback: callable = None,
     clarify_callback: callable = None,
+    context_inline_shell_callback: callable = None,
     read_terminal_callback: callable = None,
     read_preview_callback: callable = None,
     drive_preview_callback: callable = None,
@@ -645,6 +646,12 @@ def init_agent(
         tool_progress_callback (callable): Callback function(tool_name, args_preview) for progress notifications
         clarify_callback (callable): Callback function(question, choices) -> str for interactive user questions.
             Provided by the platform layer (CLI or gateway). If None, the clarify tool returns an error.
+        context_inline_shell_callback (callable): Callback function(question, choices, multi_select) -> str
+            used to ask the user before expanding ``!`cmd`` snippets in UNTRUSTED
+            context files (see ``context_files.inline_shell`` in config.yaml).
+            Defaults to ``clarify_callback`` when set, so surfaces that can ask
+            the user can approve snippets without extra wiring. If neither is
+            available (headless surfaces), untrusted snippets are left literal.
         max_tokens (int): Maximum tokens for model responses (optional, uses model default if not set)
         reasoning_config (Dict): OpenRouter reasoning configuration override (e.g. {"effort": "none"} to disable thinking).
             If None, defaults to {"enabled": True, "effort": "medium"} for OpenRouter. Set to disable/customize reasoning.
@@ -872,6 +879,14 @@ def init_agent(
     agent.thinking_callback = thinking_callback
     agent.reasoning_callback = reasoning_callback
     agent.clarify_callback = clarify_callback
+    # Context-file inline-shell approval rides the clarify channel: surfaces
+    # that can ask the user (CLI, gateway, TUI) get snippet approval for
+    # untrusted context files for free; headless surfaces (cron, kanban,
+    # delegate) never pass either callback, so untrusted snippets stay
+    # literal there instead of guessing.
+    agent.context_inline_shell_callback = (
+        context_inline_shell_callback or clarify_callback
+    )
     agent.read_terminal_callback = read_terminal_callback
     agent.read_preview_callback = read_preview_callback
     agent.drive_preview_callback = drive_preview_callback

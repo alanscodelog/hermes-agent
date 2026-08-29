@@ -18,6 +18,9 @@ from agent.prompt_builder import (
     _strip_yaml_frontmatter,
     build_skills_system_prompt,
     build_context_files_prompt,
+    _expand_context_inline_shell,
+    _context_inline_shell_trusted,
+    set_context_inline_shell_callback,
     CONTEXT_FILE_MAX_CHARS,
     _dynamic_context_file_max_chars,
     _get_context_file_max_chars,
@@ -1020,3 +1023,474 @@ class TestParallelToolCallGuidance:
 # =========================================================================
 
 
+# =========================================================================
+# Context-file inline-shell expansion
+# =========================================================================
+
+
+class TestContextInlineShell:
+    """!`cmd` snippets in context files: gate, trust, prompt, expansion.
+
+    The config section is ``context_files`` in config.yaml. The gate
+    (``inline_shell``) is off by default; ``inline_shell_trusted_dirs``
+    defaults to an empty list, so EVERY context file is untrusted out of
+    the box and prompts (on interactive surfaces) or stays literal
+    (headless).
+    """
+
+    SNIPPET = "Before !`echo hello` after"
+
+    @pytest.fixture(autouse=True)
+    def _reset_callback(self):
+        """Clear the module-level callback so tests don't leak it."""
+        set_context_inline_shell_callback(None)
+        yield
+        set_context_inline_shell_callback(None)
+
+    # --- gate (inline_shell) ---
+
+    def test_gate_off_keeps_snippet_literal(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly", lambda: {}
+        )
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "!`echo hello`" in out
+
+    def test_gate_off_is_default(self, tmp_path, monkeypatch):
+        # No context_files section at all → gate off.
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly", lambda: {}
+        )
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "!`echo hello`" in out
+
+    def test_no_snippets_fast_path(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        content = "Just plain text, no snippets"
+        out = _expand_context_inline_shell(content, f, "AGENTS.md")
+        assert out == content
+
+    # --- trusted dirs ---
+
+    def test_trusted_dir_expands_without_asking(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+        calls = []
+
+        def fake_cb(question, choices, multi):
+            calls.append(question)
+            return "Run it"
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "hello" in out
+        assert "!`" not in out
+        assert len(calls) == 0  # trusted → no prompt
+
+    def test_trusted_subdir_expands_without_asking(self, tmp_path, monkeypatch):
+        # A file in a SUBDIRECTORY of a trusted dir is also trusted.
+        sub = tmp_path / "nested" / "deep"
+        sub.mkdir(parents=True)
+        f = sub / "CLAUDE.md"
+        f.write_text(self.SNIPPET)
+        calls = []
+
+        def fake_cb(question, choices, multi):
+            calls.append(question)
+            return "Run it"
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "CLAUDE.md")
+        assert "hello" in out
+        assert "!`" not in out
+        assert len(calls) == 0
+
+    def test_untrusted_dir_does_not_expand(self, tmp_path, monkeypatch):
+        # File OUTSIDE the trusted dir → untrusted.
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+        other_dir = tmp_path / "other"
+        other_dir.mkdir()
+        calls = []
+
+        def fake_cb(question, choices, multi):
+            calls.append(question)
+            return "Run it"
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(other_dir)],
+                }
+            },
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        # Untrusted + approved → expands (prompt was asked and approved).
+        assert "hello" in out
+        assert len(calls) == 1  # asked once
+
+    def test_trusted_helper_tilde_and_env(self, tmp_path, monkeypatch):
+        # ~ and env-var expansion in trusted dirs.
+        f = tmp_path / "AGENTS.md"
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        assert _context_inline_shell_trusted(f) is True
+        # A file in a sibling dir (NOT under the trusted dir) is not trusted.
+        other = tmp_path.parent / "outside.md"
+        assert _context_inline_shell_trusted(other) is False
+
+    def test_trusted_helper_empty_default(self, tmp_path, monkeypatch):
+        # Empty trusted_dirs (the default) → nothing is trusted.
+        f = tmp_path / "AGENTS.md"
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {"context_files": {"inline_shell": True}},
+        )
+        assert _context_inline_shell_trusted(f) is False
+
+    def test_trusted_helper_no_config(self, tmp_path, monkeypatch):
+        # No config at all → nothing trusted, no crash.
+        f = tmp_path / "AGENTS.md"
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {},
+        )
+        assert _context_inline_shell_trusted(f) is False
+
+    # --- untrusted + prompt ---
+
+    def test_untrusted_prompt_approved(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+        calls = []
+
+        def fake_cb(question, choices, multi):
+            calls.append(question)
+            return "Run it"
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {"context_files": {"inline_shell": True}},
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "hello" in out
+        assert "!`" not in out
+        assert len(calls) == 1
+        assert "AGENTS.md" in calls[0]
+
+    def test_untrusted_prompt_declined(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+
+        def fake_cb(question, choices, multi):
+            return "Skip it (leave literal)"
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {"context_files": {"inline_shell": True}},
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "!`echo hello`" in out  # stays literal
+
+    def test_untrusted_prompt_timeout_declines(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+
+        def fake_cb(question, choices, multi):
+            return "The user did not provide a response (timed out)."
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {"context_files": {"inline_shell": True}},
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "!`echo hello`" in out  # timeout → literal
+
+    def test_untrusted_no_callback_stays_literal(self, tmp_path, monkeypatch):
+        # Headless surface: no callback registered → literal, no crash.
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {"context_files": {"inline_shell": True}},
+        )
+        set_context_inline_shell_callback(None)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "!`echo hello`" in out
+
+    def test_prompt_disabled_untrusted_stays_literal(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        f.write_text(self.SNIPPET)
+        calls = []
+
+        def fake_cb(question, choices, multi):
+            calls.append(question)
+            return "Run it"
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_prompt": False,
+                }
+            },
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "!`echo hello`" in out
+        assert len(calls) == 0  # prompt disabled → never asks
+
+    # --- multiple snippets ---
+
+    def test_multiple_snippets_each_asked(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        f.write_text("!`echo one` and !`echo two`")
+        calls = []
+
+        def fake_cb(question, choices, multi):
+            calls.append(question)
+            return "Run it"
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {"context_files": {"inline_shell": True}},
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "one" in out
+        assert "two" in out
+        assert len(calls) == 2  # asked per snippet
+
+    def test_mixed_approve_decline(self, tmp_path, monkeypatch):
+        f = tmp_path / "AGENTS.md"
+        f.write_text("!`echo one` and !`echo two`")
+        state = {"n": 0}
+
+        def fake_cb(question, choices, multi):
+            state["n"] += 1
+            return "Run it" if state["n"] == 1 else "Skip it (leave literal)"
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {"context_files": {"inline_shell": True}},
+        )
+        set_context_inline_shell_callback(fake_cb)
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "one" in out  # approved
+        assert "!`echo two`" in out  # declined → literal
+
+    # --- expansion runs in file's dir ---
+
+    def test_expansion_cwd_is_file_dir(self, tmp_path, monkeypatch):
+        # A snippet that references a relative file in the file's dir.
+        (tmp_path / "marker.txt").write_text("MARKER")
+        f = tmp_path / "AGENTS.md"
+        f.write_text("content: !`cat marker.txt`")
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        out = _expand_context_inline_shell(f.read_text(), f, "AGENTS.md")
+        assert "MARKER" in out
+
+
+class TestContextInlineShellInLoaders:
+    """End-to-end: expansion wired into the context-file loaders."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_callback(self):
+        set_context_inline_shell_callback(None)
+        yield
+        set_context_inline_shell_callback(None)
+
+    def test_agents_md_loader_expands_trusted(self, tmp_path, monkeypatch):
+        from agent.prompt_builder import _load_agents_md
+
+        (tmp_path / "AGENTS.md").write_text("Rules !`echo X` end")
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        result = _load_agents_md(tmp_path)
+        assert "X" in result
+        assert "!`" not in result
+
+    def test_agents_md_loader_gate_off(self, tmp_path, monkeypatch):
+        from agent.prompt_builder import _load_agents_md
+
+        (tmp_path / "AGENTS.md").write_text("Rules !`echo X` end")
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly", lambda: {}
+        )
+        result = _load_agents_md(tmp_path)
+        assert "!`echo X`" in result
+
+    def test_claude_md_loader_expands_trusted(self, tmp_path, monkeypatch):
+        from agent.prompt_builder import _load_claude_md
+
+        (tmp_path / "CLAUDE.md").write_text("Rules !`echo X` end")
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        result = _load_claude_md(tmp_path)
+        assert "X" in result
+        assert "!`" not in result
+
+    def test_cursorrules_loader_expands_trusted(self, tmp_path, monkeypatch):
+        from agent.prompt_builder import _load_cursorrules
+
+        (tmp_path / ".cursorrules").write_text("Rules !`echo X` end")
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        result = _load_cursorrules(tmp_path)
+        assert "X" in result
+        assert "!`" not in result
+
+    def test_hermes_md_loader_expands_trusted(self, tmp_path, monkeypatch):
+        from agent.prompt_builder import _load_hermes_md
+
+        (tmp_path / ".hermes.md").write_text("Rules !`echo X` end")
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        result = _load_hermes_md(tmp_path)
+        assert "X" in result
+        assert "!`" not in result
+
+
+class TestSubdirectoryHintsInlineShell:
+    """!`cmd` expansion in subdirectory-discovered hint files."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_callback(self):
+        set_context_inline_shell_callback(None)
+        yield
+        set_context_inline_shell_callback(None)
+
+    def test_hint_expands_trusted(self, tmp_path, monkeypatch):
+        from agent.subdirectory_hints import SubdirectoryHintTracker
+
+        (tmp_path / "AGENTS.md").write_text("Root")
+        sub = tmp_path / "backend"
+        sub.mkdir()
+        (sub / "AGENTS.md").write_text("Backend !`echo X` rules")
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {
+                "context_files": {
+                    "inline_shell": True,
+                    "inline_shell_trusted_dirs": [str(tmp_path)],
+                }
+            },
+        )
+        tracker = SubdirectoryHintTracker(working_dir=str(tmp_path))
+        result = tracker.check_tool_call(
+            "read_file", {"path": str(sub / "main.py")}
+        )
+        assert result is not None
+        assert "X" in result
+        assert "!`" not in result
+
+    def test_hint_gate_off(self, tmp_path, monkeypatch):
+        from agent.subdirectory_hints import SubdirectoryHintTracker
+
+        (tmp_path / "AGENTS.md").write_text("Root")
+        sub = tmp_path / "backend"
+        sub.mkdir()
+        (sub / "AGENTS.md").write_text("Backend !`echo X` rules")
+
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly", lambda: {}
+        )
+        tracker = SubdirectoryHintTracker(working_dir=str(tmp_path))
+        result = tracker.check_tool_call(
+            "read_file", {"path": str(sub / "main.py")}
+        )
+        assert result is not None
+        assert "!`echo X`" in result
+
+    def test_hint_untrusted_no_callback_literal(self, tmp_path, monkeypatch):
+        from agent.subdirectory_hints import SubdirectoryHintTracker
+
+        (tmp_path / "AGENTS.md").write_text("Root")
+        sub = tmp_path / "backend"
+        sub.mkdir()
+        (sub / "AGENTS.md").write_text("Backend !`echo X` rules")
+
+        # Gate on but nothing trusted and no callback → literal.
+        monkeypatch.setattr(
+            "hermes_cli.config.load_config_readonly",
+            lambda: {"context_files": {"inline_shell": True}},
+        )
+        set_context_inline_shell_callback(None)
+        tracker = SubdirectoryHintTracker(working_dir=str(tmp_path))
+        result = tracker.check_tool_call(
+            "read_file", {"path": str(sub / "main.py")}
+        )
+        assert result is not None
+        assert "!`echo X`" in result
