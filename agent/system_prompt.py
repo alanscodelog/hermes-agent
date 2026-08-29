@@ -719,6 +719,16 @@ def _context_files_part(agent: Any, ctx_len: Optional[int], soul_loaded: bool) -
     can reject Hermes's bundled AGENTS.md."""
     if agent.skip_context_files:
         return []
+    # Register the interactive callback BEFORE loading context files so
+    # untrusted !`cmd` snippets can prompt the user (see
+    # prompt_builder._expand_context_inline_shell). Headless surfaces
+    # (cron, kanban, delegate) never set one, so untrusted snippets stay
+    # literal there.
+    from agent.prompt_builder import set_context_inline_shell_callback
+
+    set_context_inline_shell_callback(
+        getattr(agent, "context_inline_shell_callback", None)
+    )
     launch_artifact = getattr(agent, "_context_cwd_is_launch_artifact", False)
     cwd = resolve_context_cwd(include_session_override=not launch_artifact)
     return [_pb.build_context_files_prompt(
