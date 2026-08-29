@@ -11,7 +11,7 @@ import shlex
 from pathlib import Path
 from typing import Dict, Any, Optional, Set
 
-from agent.prompt_builder import _read_text_with_timeout, _scan_context_content, _truncate_content
+from agent.prompt_builder import _expand_context_inline_shell, _read_text_with_timeout, _scan_context_content, _truncate_content
 from agent.search_policy import SEARCH_PRUNE_DIR_NAMES
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,10 @@ class SubdirectoryHintTracker:
         self._loaded_digests: Set[str] = set()
         found = _first_hint_file(self.working_dir)
         if found and found[1]:
-            self._loaded_digests.add(_digest(found[1]))
+            # Expand first so the seeded digest matches what
+            # _load_hints_for_directory will compute for the same file.
+            expanded = _expand_context_inline_shell(found[1], found[0], found[0].name)
+            self._loaded_digests.add(_digest(expanded))
 
     def check_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> Optional[str]:
         """Return formatted hint text for newly visited directories, or None."""
@@ -169,12 +172,17 @@ class SubdirectoryHintTracker:
                 content = (_read_text_with_timeout(hint_path) or "").strip()
                 if not content:
                     continue
+                # Inline-shell expansion (gated + trust-checked like startup
+                # loading), then the same security scan as startup loading.
+                content = _expand_context_inline_shell(content, hint_path, filename)
+                # Dedup on the EXPANDED content: two copies of the same file
+                # reached via different paths are duplicates only if they
+                # expand identically (trust status can differ per path).
                 digest = _digest(content)
                 if digest in self._loaded_digests:
                     logger.debug("Skipping duplicate hint content at %s (digest %s)", hint_path, digest[:12])
                     return None
                 self._loaded_digests.add(digest)
-                # Same security scan as startup context loading.
                 content = _scan_context_content(content, filename)
                 rel_path = self._display_path(hint_path)
                 content = _truncate_content(content, filename, max_chars=_MAX_HINT_CHARS, read_path=rel_path)

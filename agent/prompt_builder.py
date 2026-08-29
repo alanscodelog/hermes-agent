@@ -1023,6 +1023,168 @@ CONTEXT_FILE_MAX_CHARS = 20_000
 CONTEXT_TRUNCATE_HEAD_RATIO = 0.7
 CONTEXT_TRUNCATE_TAIL_RATIO = 0.2
 
+# =========================================================================
+# Context-file inline shell expansion
+#
+# Mirrors skills.inline_shell for project context files (AGENTS.md, CLAUDE.md,
+# .hermes.md, .cursorrules, SOUL.md, ...). Context files are repo-controlled
+# and can be untrusted in shared/cloned repos, so the default posture is
+# stricter than skills:
+#
+#   context_files.inline_shell — master gate. Off by default. When off, no
+#     context-file snippet runs and !`cmd` text stays literal in the prompt.
+#   context_files.inline_shell_trusted_dirs — allowlist of directories whose
+#     context files may expand snippets without asking. A file is trusted when
+#     it sits at or under any listed path (paths may use ~ and env vars).
+#     Empty by default: EVERY context file is untrusted, so enabling
+#     inline_shell prompts before expanding. Add your own dirs here
+#     (e.g. ["~/code/myproject", "~/.hermes"]) to skip the prompt for files
+#     you control.
+#   context_files.inline_shell_prompt — when true, a context file OUTSIDE the
+#     trusted dirs that contains !`cmd` snippets pauses and asks the user
+#     before expanding (on surfaces with a live user). On headless surfaces
+#     (gateway, cron, kanban) where no one can answer, the snippet is skipped
+#     and left literal instead of guessing.
+#
+# The security scan, size caps, and truncation always apply to the FINAL
+# assembled content — expanded output is scanned, not just the raw file.
+# =========================================================================
+
+# Module-level callback set by the agent runner (cli.py / gateway) so the
+# prompt-builder layer can ask the user without importing the agent. Signature:
+#   callback(question: str, choices: Optional[List[str]], multi_select: bool) -> str
+_context_inline_shell_callback: Optional[Callable] = None
+
+
+def set_context_inline_shell_callback(callback: Optional[Callable]) -> None:
+    """Register the interactive callback used for context-file shell prompts."""
+    global _context_inline_shell_callback
+    _context_inline_shell_callback = callback
+
+
+def _context_inline_shell_cfg() -> dict:
+    """Load the ``context_files`` config section (best-effort)."""
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        cfg = load_config_readonly() or {}
+        section = cfg.get("context_files")
+        if isinstance(section, dict):
+            return section
+    except Exception:
+        logger.debug("Could not read context_files config", exc_info=True)
+    return {}
+
+
+def _context_inline_shell_trusted(file_path: Path) -> bool:
+    """True when *file_path* sits at or under a trusted context-file dir.
+
+    Trusted dirs come from ``context_files.inline_shell_trusted_dirs``.
+    Each entry is expanded (``~``, env vars) and resolved; a file is trusted
+    when it is inside (or is) any resolved dir.
+    """
+    cfg = _context_inline_shell_cfg()
+    raw_dirs = cfg.get("inline_shell_trusted_dirs")
+    if not isinstance(raw_dirs, list) or not raw_dirs:
+        return False
+    try:
+        resolved_file = file_path.resolve()
+    except (OSError, ValueError):
+        return False
+    for raw in raw_dirs:
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        try:
+            expanded = os.path.expandvars(os.path.expanduser(raw))
+            trusted_dir = Path(expanded).resolve()
+        except (OSError, ValueError):
+            continue
+        try:
+            if resolved_file == trusted_dir or resolved_file.is_relative_to(trusted_dir):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def _context_inline_shell_ask(file_path: Path, command: str) -> bool:
+    """Ask the user whether to run one inline-shell snippet from an untrusted file.
+
+    Returns True when the user approves. On headless surfaces (no callback
+    registered, or the callback signals a non-interactive timeout) returns
+    False so the snippet is left literal rather than guessed.
+    """
+    if _context_inline_shell_callback is None:
+        return False
+    try:
+        answer = _context_inline_shell_callback(
+            f"Context file {file_path} contains an inline shell snippet:\n\n"
+            f"  !`{command}`\n\n"
+            f"This file is outside your trusted context-file directories. "
+            f"Run this command and splice its output into the prompt?",
+            ["Run it", "Skip it (leave literal)"],
+            False,
+        )
+    except Exception as e:
+        logger.debug("Context inline-shell prompt failed: %s", e)
+        return False
+    if not isinstance(answer, str):
+        return False
+    a = answer.strip().lower()
+    if not a:
+        return False
+    # The clarify callback returns the chosen option text or a timeout note.
+    if "did not provide a response" in a or "timed out" in a:
+        return False
+    return a.startswith("run")
+
+
+def _expand_context_inline_shell(
+    content: str,
+    file_path: Path,
+    label: str,
+) -> str:
+    """Expand !`cmd` snippets in a context file, honouring gate + trust + prompt.
+
+    - Gate off → return content unchanged (snippets stay literal).
+    - File trusted → expand every snippet (no prompt).
+    - File untrusted → ask per snippet (when ``inline_shell_prompt`` is on and
+      a callback is available); unapproved snippets stay literal.
+
+    Skill-specific template vars (``${HERMES_SKILL_DIR}`` /
+    ``${HERMES_SESSION_ID}``) are NOT substituted here — context files have no
+    skill dir, and ``expand_inline_shell`` only substitutes what it is given.
+    """
+    if "!`" not in content:
+        return content
+    cfg = _context_inline_shell_cfg()
+    if not cfg.get("inline_shell", False):
+        return content
+    timeout = int(cfg.get("inline_shell_timeout", 10) or 10)
+
+    from agent.skill_preprocessing import expand_inline_shell
+
+    if _context_inline_shell_trusted(file_path):
+        return expand_inline_shell(content, file_path.parent, timeout)
+
+    if not cfg.get("inline_shell_prompt", True):
+        return content
+
+    # Untrusted file, prompt enabled: expand snippet-by-snippet so the user
+    # can approve each one individually.
+    from agent.skill_preprocessing import _INLINE_SHELL_RE, run_inline_shell
+
+    def _replace(match: "re.Match") -> str:
+        cmd = match.group(1).strip()
+        if not cmd:
+            return ""
+        if _context_inline_shell_ask(file_path, cmd):
+            return run_inline_shell(cmd, file_path.parent, timeout)
+        return match.group(0)  # leave literal
+
+    return _INLINE_SHELL_RE.sub(_replace, content)
+
+
 # Dynamic cap (no explicit context_file_max_chars): ~4 chars/token, a small slice of the window since
 # context files share the cached prefix; small models stay at the floor.
 _CONTEXT_FILE_CHARS_PER_TOKEN = 4
@@ -1474,6 +1636,7 @@ def load_soul_md(context_length: Optional[int] = None, home_override: "Path | No
             content = strip_legacy_protocol(content).strip()
         if not content:
             return None
+        content = _expand_context_inline_shell(content, soul_path, "SOUL.md")
         return _truncate_content(_scan_context_content(content, "SOUL.md"), "SOUL.md", context_length=context_length,
                                  read_path=str(soul_path))
     except Exception as e:
@@ -1505,7 +1668,8 @@ def _load_hermes_md(cwd_path: Path, context_length: Optional[int] = None) -> str
     if not content:
         return ""
     label = str(hermes_md_path.relative_to(cwd_path)) if hermes_md_path.is_relative_to(cwd_path) else hermes_md_path.name
-    return _context_section(_strip_yaml_frontmatter(content), label, ".hermes.md", hermes_md_path, context_length)
+    expanded = _expand_context_inline_shell(content, hermes_md_path, ".hermes.md")
+    return _context_section(_strip_yaml_frontmatter(expanded), label, ".hermes.md", hermes_md_path, context_length)
 
 
 def _agents_md_directory_chain(cwd_path: Path) -> list[Path]:
@@ -1541,6 +1705,8 @@ def _load_agents_md(cwd_path: Path, context_length: Optional[int] = None) -> str
             content = _read_context_file(candidate)
             if not content:
                 continue
+            # Expand first so dedup compares EXPANDED content (trust status can differ per path).
+            content = _expand_context_inline_shell(content, candidate, name)
             if content not in seen_content:  # else: identical copy along the chain
                 seen_content.add(content)
                 label = name if directory == cwd_resolved else os.path.relpath(candidate, cwd_resolved)
@@ -1558,7 +1724,8 @@ def _load_claude_md(cwd_path: Path, context_length: Optional[int] = None) -> str
     for name in ("CLAUDE.md", "claude.md"):
         content = _read_context_file(cwd_path / name)
         if content:
-            return _context_section(content, name, "CLAUDE.md", cwd_path / name, context_length)
+            expanded = _expand_context_inline_shell(content, cwd_path / name, name)
+            return _context_section(expanded, name, "CLAUDE.md", cwd_path / name, context_length)
     return ""
 
 
@@ -1568,10 +1735,13 @@ def _load_cursorrules(cwd_path: Path, context_length: Optional[int] = None) -> s
     cursor_rules_dir = cwd_path / ".cursor" / "rules"
     if cursor_rules_dir.is_dir():
         candidates += [(f, f".cursor/rules/{f.name}") for f in sorted(cursor_rules_dir.glob("*.mdc"))]
-    cursorrules_content = "".join(
-        f"## {label}\n\n{_scan_context_content(content, label)}\n\n"
-        for path, label in candidates if (content := _read_context_file(path))
-    )
+    cursorrules_content = ""
+    for path, label in candidates:
+        content = _read_context_file(path)
+        if not content:
+            continue
+        expanded = _expand_context_inline_shell(content, path, label)
+        cursorrules_content += f"## {label}\n\n{_scan_context_content(expanded, label)}\n\n"
     if not cursorrules_content:
         return ""
     return _truncate_content(cursorrules_content, ".cursorrules", context_length=context_length,

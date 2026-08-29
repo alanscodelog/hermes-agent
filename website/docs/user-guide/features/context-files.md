@@ -185,6 +185,55 @@ If any threat pattern is detected, the file is blocked:
 This scanner protects against common injection patterns, but it's not a substitute for reviewing context files in shared repositories. Always validate AGENTS.md content in projects you didn't author.
 :::
 
+## Inline Shell Expansion
+
+Context files can embed `!`cmd`` snippets that are executed at load time and spliced into the prompt with their stdout. This is useful for injecting dynamic, always-current information (e.g. `!`git branch --show-current``, `!`cat .env.example | head -5``) without hand-maintaining it.
+
+```markdown
+# AGENTS.md
+## Current branch
+!`git branch --show-current`
+
+## Dependencies
+!`grep -E '^(fastapi|sqlalchemy)' pyproject.toml`
+```
+
+### Configuration
+
+All settings live under the `context_files` section in `config.yaml`:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `inline_shell` | `false` | Master gate. When off (the default), no snippet runs and `!`cmd`` text stays literal in the prompt. |
+| `inline_shell_timeout` | `10` | Per-snippet timeout in seconds. |
+| `inline_shell_trusted_dirs` | `[]` | Allowlist of directories whose context files may expand snippets **without asking**. A file is trusted when it sits at or under any listed path (paths support `~` and env vars). **Empty by default — every context file is untrusted out of the box.** |
+| `inline_shell_prompt` | `true` | When a context file is untrusted and contains snippets, whether to ask the user per snippet on interactive surfaces. When `false`, untrusted snippets are left literal without asking. |
+
+### Trust model
+
+- **Gate off** (default): nothing runs, snippets stay literal.
+- **File in a trusted dir**: every snippet runs silently (no prompt).
+- **File outside trusted dirs**: each snippet is asked individually on interactive surfaces (CLI, TUI, gateway). On headless surfaces (cron, kanban, delegate) there is no one to ask, so untrusted snippets are left literal rather than guessed.
+- **Timeout / no response**: treated as a decline — the snippet stays literal.
+
+### Example config
+
+```yaml
+context_files:
+  inline_shell: true
+  inline_shell_timeout: 15
+  inline_shell_trusted_dirs:
+    - ~/projects/my-repo
+    - ~/config
+  inline_shell_prompt: true
+```
+
+With this config, `AGENTS.md` under `~/projects/my-repo` expands snippets silently; any other context file (e.g. one in a freshly-cloned repo) prompts per snippet.
+
+:::warning
+Inline shell snippets in context files execute arbitrary commands with your user's permissions. Only enable this feature in repositories you trust, and keep `inline_shell_trusted_dirs` scoped to directories you control. Cloned or shared repos are untrusted by default and will prompt.
+:::
+
 ## Size Limits
 
 | Limit | Value |

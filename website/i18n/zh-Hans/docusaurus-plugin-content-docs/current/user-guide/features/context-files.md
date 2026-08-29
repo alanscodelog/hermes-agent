@@ -167,6 +167,55 @@ The following project context files have been loaded and should be followed:
 此扫描器可防范常见注入模式，但不能替代对上下文文件的人工审查。对于非本人编写的共享仓库，请务必验证 AGENTS.md 的内容。
 :::
 
+## 内联 Shell 扩展
+
+上下文文件可以嵌入 `!`cmd`` 片段，在加载时执行并将标准输出拼接进 prompt。这适用于注入动态的、始终最新的信息（例如 `!`git branch --show-current``、`!`cat .env.example | head -5``），而无需手工维护。
+
+```markdown
+# AGENTS.md
+## 当前分支
+!`git branch --show-current`
+
+## 依赖
+!`grep -E '^(fastapi|sqlalchemy)' pyproject.toml`
+```
+
+### 配置
+
+所有设置位于 `config.yaml` 的 `context_files` 部分：
+
+| 键 | 默认值 | 说明 |
+|-----|---------|-------------|
+| `inline_shell` | `false` | 主开关。关闭时（默认值）不执行任何片段，`!`cmd`` 文本在 prompt 中保持字面量。 |
+| `inline_shell_timeout` | `10` | 每个片段的超时时间（秒）。 |
+| `inline_shell_trusted_dirs` | `[]` | 允许列表，其中目录下的上下文文件可以**无需询问**即扩展片段。文件位于任一列出的路径之下（或就是该路径）时被视为可信（路径支持 `~` 和环境变量）。**默认为空 —— 开箱即用时所有上下文文件都不可信。** |
+| `inline_shell_prompt` | `true` | 当上下文文件不可信且包含片段时，是否在交互式界面上逐片段询问用户。设为 `false` 时，不可信片段直接保持字面量而不询问。 |
+
+### 信任模型
+
+- **开关关闭**（默认）：不执行任何内容，片段保持字面量。
+- **文件位于可信目录中**：所有片段静默执行（无需询问）。
+- **文件位于可信目录之外**：在交互式界面（CLI、TUI、gateway）上逐片段询问。在无头界面（cron、kanban、delegate）上没有可询问的对象，因此不可信片段保持字面量而非猜测执行。
+- **超时 / 无响应**：视为拒绝 —— 片段保持字面量。
+
+### 配置示例
+
+```yaml
+context_files:
+  inline_shell: true
+  inline_shell_timeout: 15
+  inline_shell_trusted_dirs:
+    - ~/projects/my-repo
+    - ~/config
+  inline_shell_prompt: true
+```
+
+使用此配置，`~/projects/my-repo` 下的 `AGENTS.md` 会静默扩展片段；其他任何上下文文件（例如新克隆仓库中的文件）会逐片段询问。
+
+:::warning
+上下文文件中的内联 shell 片段会以你的用户权限执行任意命令。仅在你信任的仓库中启用此功能，并将 `inline_shell_trusted_dirs` 限定在你控制的目录范围内。克隆或共享的仓库默认不可信，会触发询问。
+:::
+
 ## 大小限制
 
 | 限制 | 值 |
