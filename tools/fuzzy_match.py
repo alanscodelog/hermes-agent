@@ -336,7 +336,7 @@ def _format_match_locations(content: str, matches: list[Span], cap: int = 5) -> 
 
 def fuzzy_find_and_replace(content: str, old_string: str, new_string: str,
                            replace_all: bool = False,
-                           exact_only: bool = True) -> tuple[str, int, Optional[str], Optional[str]]:
+                           exact_only: bool = False) -> tuple[str, int, Optional[str], Optional[str]]:
     """Find and replace via the strategy chain.
 
     Returns ``(new_content, match_count, strategy_name, error)``; on failure

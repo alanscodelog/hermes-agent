@@ -842,13 +842,12 @@ def _collect_v4a_header_paths(patch: str) -> tuple[list[str], list[str]] | str:
 
 def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
                new_string: str = None, replace_all: bool = False, patch: str = None,
-               exact_only: bool = True, task_id: str = "default",
+               exact_only: bool = False, task_id: str = "default",
                cross_profile: bool = False, session_id: str | None = None) -> str:
     """Patch a file using replace mode or V4A patch format.
 
-    When ``exact_only=True``, skips fuzzy matching and requires an exact
-    string match. Use this for tab-indented files where fuzzy matching may
-    match the wrong location and corrupt indentation.
+    When ``exact_only=True``, turns off fuzzy matching and requires an exact
+    string match.
 
     ``cross_profile`` opts out of the soft cross-Hermes-profile guard for
     targets under another profile's skills/plugins/cron/memories
