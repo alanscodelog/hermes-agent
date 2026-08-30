@@ -5693,7 +5693,7 @@ def _resolve_task_provider_model(
     return "auto", resolved_model, None, None, resolved_api_mode
 
 
-_DEFAULT_AUX_TIMEOUT = 30.0
+_DEFAULT_AUX_TIMEOUT = 300.0
 
 # Reasoning compression models can exceed the default 120 s config timeout, falling back to the
 # deterministic marker. Bounded *floor* for config-derived compression timeouts only; never
