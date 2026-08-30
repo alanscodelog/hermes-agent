@@ -110,7 +110,7 @@ class FileOperations(ABC):
 
     @abstractmethod
     def patch_replace(self, path: str, old_string: str, new_string: str,
-                      replace_all: bool = False, exact_only: bool = True) -> PatchResult:
+                      replace_all: bool = False, exact_only: bool = False) -> PatchResult:
         """Replace text in a file using fuzzy matching."""
 
     @abstractmethod
@@ -1517,6 +1517,8 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             _content_sha256=hashlib.sha256(content_bytes).hexdigest(),
             lint=lint_result.to_dict() if lint_result else None, lsp_diagnostics=lsp_diagnostics)
 
+    # =========================================================================
+    # PATCH Implementation (Replace Mode)
     # --- PATCH (replace mode) -----------------------------------------------
 
     def _no_match_result(self, path: str, content: str, old_string: str,
@@ -1562,7 +1564,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return None
 
     def patch_replace(self, path: str, old_string: str, new_string: str,
-                      replace_all: bool = False, exact_only: bool = True) -> PatchResult:
+                      replace_all: bool = False, exact_only: bool = False) -> PatchResult:
         """Replace text in a file using fuzzy matching (``old_string`` must be
         unique unless ``replace_all``). Returns a PatchResult with diff + lint."""
         path = self._expand_path(path)
