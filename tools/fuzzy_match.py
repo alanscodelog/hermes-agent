@@ -125,7 +125,7 @@ def _format_match_locations(content: str, matches: List[Tuple[int, int]],
 
 def fuzzy_find_and_replace(content: str, old_string: str, new_string: str,
                             replace_all: bool = False,
-                            exact_only: bool = True) -> Tuple[str, int, Optional[str], Optional[str]]:
+                            exact_only: bool = False) -> Tuple[str, int, Optional[str], Optional[str]]:
     """
     Find and replace text using a chain of increasingly fuzzy matching strategies.
 
