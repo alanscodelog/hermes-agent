@@ -8485,7 +8485,7 @@ def _resolve_task_provider_model(
     return "auto", resolved_model, None, None, resolved_api_mode
 
 
-_DEFAULT_AUX_TIMEOUT = 30.0
+_DEFAULT_AUX_TIMEOUT = 300.0
 
 # Compression summarises large conversation histories; a reasoning auxiliary
 # model (e.g. Codex / GPT-5.5) can legitimately take longer than the default
