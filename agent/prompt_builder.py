@@ -59,6 +59,27 @@ logger = logging.getLogger(__name__)
 
 from tools.threat_patterns import scan_for_threats as _scan_for_threats
 
+# Fenced code blocks (``` or ~~~) and inline code spans (`...`) hold
+# documentation, examples, and template snippets that legitimately contain
+# HTML comments, shell commands, and other text that looks like an injection
+# payload when read out of context.  Mask their contents before the threat
+# scan so a SOUL.md or AGENTS.md with `<!-- note: system uses hidden divs -->`
+# inside a code block is not blocked wholesale.  Real injections in prose
+# (outside code) still reach the scanner.
+_MASK_CODE_RE = re.compile(
+    r"```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~|`[^`\n]+`",
+    re.DOTALL,
+)
+
+
+def _mask_code_blocks(content: str) -> str:
+    """Replace fenced/inline code block contents with a neutral placeholder.
+
+    The placeholder is inert (no HTML comments, no keywords) so the threat
+    scanner sees only the prose around the code blocks.
+    """
+    return _MASK_CODE_RE.sub("[code]", content)
+
 
 def _scan_context_content(content: str, filename: str) -> str:
     """Scan context file content for injection. Returns sanitized content.
@@ -79,7 +100,7 @@ def _scan_context_content(content: str, filename: str) -> str:
     if content.startswith("\ufeff"):
         content = content[1:]
 
-    findings = _scan_for_threats(content, scope="context")
+    findings = _scan_for_threats(_mask_code_blocks(content), scope="context")
     if findings:
         logger.warning("Context file %s blocked: %s", filename, ", ".join(findings))
         return f"[BLOCKED: {filename} contained potential prompt injection ({', '.join(findings)}). Content not loaded.]"
