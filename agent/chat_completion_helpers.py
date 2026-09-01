@@ -4172,6 +4172,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         ):
             last_chunk_time["t"] = time.time()
             agent._touch_activity("receiving stream response")
+            logger.info("Received stream chunk at t=%.2f", last_chunk_time["t"])
 
             # Update per-attempt diagnostic counters.  Best-effort —
             # failures are swallowed so the streaming hot path is never
@@ -4389,6 +4390,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                         # at line ~6107 return `tool_calls=None`, silently
                         # discarding the attempted action.
                         result["partial_tool_names"].append(name)
+                        logger.info("Partial tool call started: %s (total: %s)", name, len(result["partial_tool_names"]))
 
             chunk_finish_reason = getattr(chunk.choices[0], "finish_reason", None)
             if chunk_finish_reason:
@@ -4551,6 +4553,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             finish_reason is None
             and content_parts
             and not tool_calls_acc
+            and getattr(agent, "provider", None) != "custom"
         )
         if _text_only_dropped_no_finish:
             logger.warning(
@@ -5171,7 +5174,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
     # unless the user explicitly set HERMES_STREAM_STALE_TIMEOUT; override the
     # local ceiling with HERMES_LOCAL_STREAM_STALE_TIMEOUT (documented in
     # website/docs/reference/environment-variables.md).
-    if _stream_stale_timeout_base == 180.0 and agent.base_url and is_local_endpoint(agent.base_url):
+    if agent.base_url and is_local_endpoint(agent.base_url):
         # Read config.yaml ``agent.local_stream_stale_timeout`` (default 900),
         # env var ``HERMES_LOCAL_STREAM_STALE_TIMEOUT`` overrides for escape-hatch.
         _local_default = 900.0
@@ -5263,13 +5266,23 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         # but delivering no real chunks.  Kill the client so the
         # inner retry loop can start a fresh connection.
         _stale_elapsed = time.time() - last_chunk_time["t"]
+        logger.info(
+            "Stream health check: elapsed=%.0fs threshold=%.0fs chunks=%s",
+            _stale_elapsed, _stream_stale_timeout,
+            request_client_holder.get("diag", {}).get("chunks", 0) if isinstance(request_client_holder.get("diag"), dict) else 0,
+        )
         if _stale_elapsed > _stream_stale_timeout:
             _est_ctx = estimate_request_context_tokens(api_kwargs)
+            _diag_data = request_client_holder.get("diag", {})
+            _chunks = _diag_data.get("chunks", 0) if isinstance(_diag_data, dict) else 0
+            _first_chunk_at = _diag_data.get("first_chunk_at") if isinstance(_diag_data, dict) else None
+            _ttft = (time.time() - _first_chunk_at) if _first_chunk_at else None
             logger.warning(
                 "Stream stale for %.0fs (threshold %.0fs) — no chunks received. "
-                "model=%s context=~%s tokens. Killing connection.",
+                "model=%s context=~%s tokens chunks=%s ttft=%s. Killing connection.",
                 _stale_elapsed, _stream_stale_timeout,
                 api_kwargs.get("model", "unknown"), f"{_est_ctx:,}",
+                _chunks, f"{_ttft:.1f}s" if _ttft else "N/A",
             )
             agent._buffer_status(
                 f"⚠️ No response from provider for {int(_stale_elapsed)}s "
@@ -5378,6 +5391,12 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 _name_str = ", ".join(_partial_names[:3])
                 if len(_partial_names) > 3:
                     _name_str += f", +{len(_partial_names) - 3} more"
+                logger.info(
+                    "Tool-call stall detected: partial_tool_names=%s error=%s elapsed_since_last_chunk=%.1fs stale_timeout=%.0fs",
+                    _partial_names, result.get("error"), 
+                    time.time() - last_chunk_time["t"],
+                    _stream_stale_timeout
+                )
                 _warn = (
                     f"\n\n⚠ Stream stalled mid tool-call "
                     f"({_name_str}); the action was not executed. "
