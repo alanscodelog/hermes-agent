@@ -2,6 +2,7 @@
 
 import { type ToolCallMessagePartProps, useAuiState } from '@assistant-ui/react'
 import { useStore } from '@nanostores/react'
+import { marked } from 'marked'
 import {
   type ComponentProps,
   type FormEvent,
@@ -161,18 +162,34 @@ export function readClarifyResult(result: unknown): ClarifyResult {
 
 const letterFor = (index: number): string => String.fromCharCode(65 + index)
 
+// Lightweight markdown renderer for clarify questions/choices. Uses marked to
+// parse inline formatting (bold, italic, code) while preserving newlines via
+// `whitespace-pre-wrap` on the container.
+function MarkdownText({ text }: { text: string }) {
+  const html = useMemo(() => {
+    try {
+      return marked.parseInline(text, { async: false }) as string
+    } catch {
+      return text
+    }
+  }, [text])
+
+  return <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: html }} />
+}
+
 // The backend tags the agent's preferred option (`mark_recommended`); the card
 // renders the label in tertiary text so the option itself still reads first.
 function ChoiceLabel({ choice }: { choice: string }) {
   const bare = bareChoice(choice)
 
   if (bare === choice) {
-    return <>{choice}</>
+    return <MarkdownText text={choice} />
   }
 
   return (
     <>
-      {bare} <span className="text-(--ui-text-tertiary)">{RECOMMENDED_LABEL}</span>
+      <MarkdownText text={bare} />{' '}
+      <span className="text-(--ui-text-tertiary)">{RECOMMENDED_LABEL}</span>
     </>
   )
 }
@@ -332,7 +349,7 @@ function ClarifyToolSingleSettled({ args, result }: ToolCallMessagePartProps) {
     <ClarifyShell className="my-1.5 grid gap-1.5" data-clarify-settled="">
       {question ? (
         <ClarifyLine icon={MessageQuestion}>
-          <span className="whitespace-pre-wrap font-medium leading-(--conversation-line-height)">{question}</span>
+          <MarkdownText text={question} />
         </ClarifyLine>
       ) : null}
       {answerText ? (
@@ -720,9 +737,9 @@ function ClarifyToolSinglePending({
     >
       <ClarifyShell className="grid gap-2">
         <div className="flex items-start gap-2">
-          <span className="flex-1 whitespace-pre-wrap font-medium leading-(--conversation-line-height)">
-            {question}
-          </span>
+          <div className="flex-1 font-medium leading-(--conversation-line-height)">
+            <MarkdownText text={question} />
+          </div>
           <MessageQuestion aria-hidden className="mt-px size-4 shrink-0 text-(--ui-text-tertiary)" />
         </div>
 
@@ -827,9 +844,9 @@ function ClarifyToolBatchSettled({ responses }: { responses: { question?: string
           <div className="grid gap-1" key={`${index}-${row.question ?? ''}`}>
             {row.question ? (
               <ClarifyLine icon={MessageQuestion}>
-                <span className="whitespace-pre-wrap font-medium leading-(--conversation-line-height)">
-                  {row.question}
-                </span>
+                <div className="font-medium leading-(--conversation-line-height)">
+                  <MarkdownText text={row.question} />
+                </div>
               </ClarifyLine>
             ) : null}
             <ClarifyLine icon={CircleLetterA}>
@@ -873,9 +890,9 @@ function BatchQuestionBlock({
   return (
     <div className="grid gap-1" data-clarify-batch-question={question.qid} data-locked={locked || undefined}>
       <div className="flex items-start gap-2">
-        <span className="flex-1 whitespace-pre-wrap font-medium leading-(--conversation-line-height)">
-          {question.question}
-        </span>
+        <div className="flex-1 font-medium leading-(--conversation-line-height)">
+          <MarkdownText text={question.question} />
+        </div>
         {locked ? (
           <span className="shrink-0 rounded-sm bg-(--chrome-action-hover) px-1 py-px text-[0.625rem] text-(--ui-text-tertiary)">
             ✓ {copy.answeredBadge}
