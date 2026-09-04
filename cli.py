@@ -2526,19 +2526,27 @@ def _should_seed_interactive(query, image, quiet: bool, oneshot: bool) -> bool:
         return False
 
 
-def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
+def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int | None = None) -> int:
     """Stable TUI panel width wide enough for the title and content (incl. borders)."""
     term_cols = shutil.get_terminal_size((100, 20)).columns
     longest = max([len(title)] + [len(line) for line in content_lines] + [min_width - 4])
-    inner = min(max(longest + 4, min_width - 2), max_width - 2, max(24, term_cols - 6))
+    effective_max = max_width if max_width is not None else max(24, term_cols - 6)
+    inner = min(max(longest + 4, min_width - 2), effective_max - 2, max(24, term_cols - 6))
     return inner + 2  # leading/trailing space inside the borders
 
 
 def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "", *, keep_ws: bool = False) -> list[str]:
-    """Wrap panel text; ``keep_ws`` preserves whitespace (command/detail previews)."""
-    kw = dict(replace_whitespace=False, drop_whitespace=False) if keep_ws else dict(break_long_words=False, break_on_hyphens=False)
-    wrapped = textwrap.wrap(text, width=max(8, width), subsequent_indent=subsequent_indent, **kw)
-    return wrapped or [""]
+    """Wrap panel text; ``keep_ws`` preserves whitespace (command/detail previews).
+
+    Splits on explicit newlines first so multi-line questions/choices keep their
+    paragraph breaks instead of being collapsed into a single wrapped blob.
+    """
+    result: list[str] = []
+    for paragraph in text.split("\n"):
+        kw = dict(replace_whitespace=False, drop_whitespace=False) if keep_ws else dict(break_long_words=False, break_on_hyphens=False)
+        wrapped = textwrap.wrap(paragraph, width=max(8, width), subsequent_indent=subsequent_indent, **kw)
+        result.extend(wrapped if wrapped else [""])
+    return result or [""]
 
 
 _wrap_panel_text_keep_ws = functools.partial(_wrap_panel_text, keep_ws=True)

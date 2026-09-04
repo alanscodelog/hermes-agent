@@ -2228,7 +2228,7 @@ class CLITuiMixin:
             'completion-menu.meta.completion.current': 'bg:#333355 #FFBF00',
             'clarify-border': '#CD7F32',
             'clarify-title': '#FFD700 bold',
-            'clarify-question': '#FFF8DC bold',
+            'clarify-question': '#FFF8DC',
             'clarify-choice': '#AAAAAA',
             'clarify-selected': '#FFD700 bold',
             'clarify-active-other': '#FFD700 italic',
