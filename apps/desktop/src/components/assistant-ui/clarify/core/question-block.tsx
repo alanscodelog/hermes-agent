@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { ClarifyQuestion } from '@/store/clarify'
 
+import { MarkdownText } from './markdown-text'
 import { ChoiceButton, KeyBadge, letterFor, OPTION_ROW_CLASS } from './choice-row'
 import { CLARIFY_TEXTAREA_CLASS } from './shell'
 
@@ -43,9 +44,9 @@ export function QuestionBlock({
       onPointerDown={onActivate}
     >
       <div className="flex items-start gap-2">
-        <span className="flex-1 whitespace-pre-wrap font-medium leading-(--conversation-line-height)">
-          {question.question}
-        </span>
+        <div className="flex-1 font-medium leading-(--conversation-line-height)">
+          <MarkdownText text={question.question} />
+        </div>
       </div>
 
       {choices.length > 0 ? (

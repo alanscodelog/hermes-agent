@@ -4,6 +4,8 @@ import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
 import { bareChoice, RECOMMENDED_LABEL } from '@/store/clarify'
 
+import { MarkdownText } from './markdown-text'
+
 export const letterFor = (index: number): string => String.fromCharCode(65 + index)
 
 // The backend tags the agent's preferred option (`mark_recommended`); the card
@@ -12,12 +14,13 @@ export function ChoiceLabel({ choice }: { choice: string }) {
   const bare = bareChoice(choice)
 
   if (bare === choice) {
-    return <>{choice}</>
+    return <MarkdownText text={choice} />
   }
 
   return (
     <>
-      {bare} <span className="text-(--ui-text-tertiary)">{RECOMMENDED_LABEL}</span>
+      <MarkdownText text={bare} />{' '}
+      <span className="text-(--ui-text-tertiary)">{RECOMMENDED_LABEL}</span>
     </>
   )
 }

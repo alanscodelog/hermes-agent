@@ -7,6 +7,7 @@ import { useI18n } from '@/i18n'
 import { CircleLetterA, MessageQuestion } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
+import { MarkdownText } from './core/markdown-text'
 import { ClarifyLine, ClarifyShell } from './core/shell'
 import { readClarifyResult } from './parse'
 
@@ -30,9 +31,9 @@ export function ClarifyToolSettled(props: ToolCallMessagePartProps) {
           <div className="grid gap-1" key={`${index}-${row.question ?? ''}`}>
             {row.question ? (
               <ClarifyLine icon={MessageQuestion}>
-                <span className="whitespace-pre-wrap font-medium leading-(--conversation-line-height)">
-                  {row.question}
-                </span>
+                <div className="font-medium leading-(--conversation-line-height)">
+                  <MarkdownText text={row.question} />
+                </div>
               </ClarifyLine>
             ) : null}
             <ClarifyLine icon={CircleLetterA}>
