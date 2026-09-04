@@ -5379,9 +5379,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 if len(_partial_names) > 3:
                     _name_str += f", +{len(_partial_names) - 3} more"
                 _warn = (
-                    f"\n\n⚠ Stream stalled mid tool-call "
-                    f"({_name_str}); the action was not executed. "
-                    f"Ask me to retry if you want to continue."
+                    f"\n\n⚠"
                 )
                 _partial_text = (_partial_text or "") + _warn
                 # Fire as streaming delta so the user sees it immediately.
