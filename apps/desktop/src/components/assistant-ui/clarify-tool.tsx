@@ -188,8 +188,7 @@ function ChoiceLabel({ choice }: { choice: string }) {
 
   return (
     <>
-      <MarkdownText text={bare} />{' '}
-      <span className="text-(--ui-text-tertiary)">{RECOMMENDED_LABEL}</span>
+      <MarkdownText text={bare} /> <span className="text-(--ui-text-tertiary)">{RECOMMENDED_LABEL}</span>
     </>
   )
 }
