@@ -11231,14 +11231,18 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return inner + 2
 
         def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
-            wrapped = textwrap.wrap(
-                text,
-                width=max(8, width),
-                replace_whitespace=False,
-                drop_whitespace=False,
-                subsequent_indent=subsequent_indent,
-            )
-            return wrapped or [""]
+            """Wrap text while preserving explicit newlines."""
+            result: list[str] = []
+            for paragraph in text.split("\n"):
+                wrapped = textwrap.wrap(
+                    paragraph,
+                    width=max(8, width),
+                    replace_whitespace=False,
+                    drop_whitespace=False,
+                    subsequent_indent=subsequent_indent,
+                )
+                result.extend(wrapped if wrapped else [""])
+            return result or [""]
 
         def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
             inner_width = max(0, box_width - 2)
@@ -19899,22 +19903,27 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         # --- Clarify tool: dynamic display widget for questions + choices ---
 
-        def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
+        def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int | None = None) -> int:
             """Choose a stable panel width wide enough for the title and content."""
             term_cols = shutil.get_terminal_size((100, 20)).columns
             longest = max([len(title)] + [len(line) for line in content_lines] + [min_width - 4])
-            inner = min(max(longest + 4, min_width - 2), max_width - 2, max(24, term_cols - 6))
+            effective_max = max_width if max_width is not None else max(24, term_cols - 6)
+            inner = min(max(longest + 4, min_width - 2), effective_max - 2, max(24, term_cols - 6))
             return inner + 2  # account for the single leading/trailing spaces inside borders
 
         def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
-            wrapped = textwrap.wrap(
-                text,
-                width=max(8, width),
-                break_long_words=False,
-                break_on_hyphens=False,
-                subsequent_indent=subsequent_indent,
-            )
-            return wrapped or [""]
+            """Wrap text while preserving explicit newlines (markdown-friendly)."""
+            result: list[str] = []
+            for paragraph in text.split("\n"):
+                wrapped = textwrap.wrap(
+                    paragraph,
+                    width=max(8, width),
+                    break_long_words=False,
+                    break_on_hyphens=False,
+                    subsequent_indent=subsequent_indent,
+                )
+                result.extend(wrapped if wrapped else [""])
+            return result or [""]
 
         def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
             inner_width = max(0, box_width - 2)
@@ -20639,7 +20648,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # Clarify question panel
             'clarify-border': '#CD7F32',
             'clarify-title': '#FFD700 bold',
-            'clarify-question': '#FFF8DC bold',
+            'clarify-question': '#FFF8DC',
             'clarify-choice': '#AAAAAA',
             'clarify-selected': '#FFD700 bold',
             'clarify-active-other': '#FFD700 italic',
