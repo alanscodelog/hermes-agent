@@ -3268,8 +3268,7 @@ class _StreamingCall(StreamingWaitMonitor):
             _name_str = ", ".join(_partial_names[:3])
             if len(_partial_names) > 3:
                 _name_str += f", +{len(_partial_names) - 3} more"
-            _warn = (f"\n\n⚠ Stream stalled mid tool-call ({_name_str}); the action was not executed. "
-                     f"Ask me to retry if you want to continue.")
+            _warn = (f"\n\n⚠")
             _partial_text = (_partial_text or "") + _warn
             self._quiet(self.agent._fire_stream_delta, _warn)  # visible immediately
             logger.warning(
