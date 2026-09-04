@@ -19907,9 +19907,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             """Choose a stable panel width wide enough for the title and content."""
             term_cols = shutil.get_terminal_size((100, 20)).columns
             longest = max([len(title)] + [len(line) for line in content_lines] + [min_width - 4])
-            effective_max = max_width if max_width is not None else max(24, term_cols - 6)
-            inner = min(max(longest + 4, min_width - 2), effective_max - 2, max(24, term_cols - 6))
-            return inner + 2  # account for the single leading/trailing spaces inside borders
+            effective_max = max_width if max_width is not None else max(24, term_cols)
+            # Use full terminal width when content would wrap (longer than terminal), otherwise use min_width
+            inner = term_cols if longest >= term_cols else max(min_width, min(longest + 4, effective_max))
+            return inner  # box_width includes the border characters themselves
 
         def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "") -> list[str]:
             """Wrap text while preserving explicit newlines (markdown-friendly)."""
@@ -19926,13 +19927,13 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return result or [""]
 
         def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
-            inner_width = max(0, box_width - 2)
+            inner_width = max(0, box_width - 4)
             lines.append((border_style, "│ "))
             lines.append((content_style, text.ljust(inner_width)))
             lines.append((border_style, " │\n"))
 
         def _append_blank_panel_line(lines, border_style: str, box_width: int) -> None:
-            lines.append((border_style, "│" + (" " * box_width) + "│\n"))
+            lines.append((border_style, "│" + (" " * (box_width - 2)) + "│\n"))
 
         def _get_clarify_batch_display(state):
             """Build styled text for the batch (multi-question) clarify panel.
@@ -19965,7 +19966,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         marker = "▸"
                     else:
                         marker = "·"
-                    label = f"{marker} {entry['question']}"
+                    label = f"{marker} {_strip_markdown_syntax(entry['question'])}"
                     row_style = 'class:clarify-selected' if idx == active else 'class:clarify-choice'
                     for wrapped in _wrap_panel_text(label, width, subsequent_indent="  "):
                         rows.append((row_style, wrapped))
@@ -19974,7 +19975,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         # so the current answer stays readable while walking
                         # the list with Tab/Shift-Tab.
                         for wrapped in _wrap_panel_text(
-                            f"    {answers[entry['qid']]}", width, subsequent_indent="    "
+                            f"        {answers[entry['qid']]}", width, subsequent_indent="        "
                         ):
                             rows.append(('class:clarify-answer', wrapped))
                     if idx != active:
@@ -19990,7 +19991,15 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                             cursor = "❯" if i == selected and not cli_ref._clarify_freetext else " "
                             prefix = f"  {cursor} {num_prefix}. "
                         style = 'class:clarify-selected' if i == selected and not cli_ref._clarify_freetext else 'class:clarify-choice'
-                        for wrapped in _wrap_panel_text(f"{prefix}{choice}", width, subsequent_indent="      "):
+                        stripped_choice = _strip_markdown_syntax(choice)
+                        # Indent continuation lines to align with the first line of the option text
+                        if "\n" in stripped_choice:
+                            lines = stripped_choice.split("\n")
+                            first_line = lines[0]
+                            rest = "\n".join(lines[1:])
+                            indented_rest = "\n".join("     " + line for line in rest.split("\n"))
+                            stripped_choice = first_line + "\n" + indented_rest if indented_rest else first_line
+                        for wrapped in _wrap_panel_text(f"{prefix}{stripped_choice}", width, subsequent_indent="          "):
                             rows.append((style, wrapped))
                     if choices:
                         other_idx = len(choices)
@@ -20015,7 +20024,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         else:
                             other_label = f"    {mid}. " + (other_suffix or "Other (type your answer)")
                             other_style = 'class:clarify-choice'
-                        for wrapped in _wrap_panel_text(other_label, width, subsequent_indent="      "):
+                        for wrapped in _wrap_panel_text(other_label, width, subsequent_indent="          "):
                             rows.append((other_style, wrapped))
                     elif cli_ref._clarify_freetext:
                         for wrapped in _wrap_panel_text(
@@ -20024,19 +20033,19 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                             rows.append(('class:clarify-active-other', wrapped))
                 return rows
 
-            preview_rows = _status_rows(60)
-            box_width = _panel_box_width(title, [header] + [text for _, text in preview_rows])
-            inner_text_width = max(8, box_width - 2)
+            term_cols = shutil.get_terminal_size((100, 20)).columns
+            box_width = _panel_box_width(title, [header], min_width=term_cols)
+            inner_text_width = max(8, box_width - 4)
             rows = _status_rows(inner_text_width)
 
             lines = []
             lines.append(('class:clarify-border', '╭─ '))
             lines.append(('class:clarify-title', title))
-            lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len(title) - 3)) + '╮\n'))
+            lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len(title) - 5)) + '╮\n'))
             _append_panel_line(lines, 'class:clarify-border', 'class:clarify-question', header, box_width)
             for style, text in rows:
                 _append_panel_line(lines, 'class:clarify-border', style, text, box_width)
-            lines.append(('class:clarify-border', '╰' + ('─' * box_width) + '╯\n'))
+            lines.append(('class:clarify-border', '╰' + ('─' * (box_width - 2)) + '╯\n'))
             return lines
 
         def _get_clarify_display():
@@ -20059,9 +20068,11 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # multi-select support
             multi_select = state.get("multi_select", False)
             selected_indices = state.get("selected_indices", set()) if multi_select else set()
-            preview_lines = _wrap_panel_text(question, 60)
+            term_cols = shutil.get_terminal_size((100, 20)).columns
+            # Build preview lines at full terminal width so the box expands to fill it.
+            # The actual wrapping happens later with inner_text_width.
+            preview_lines = [_strip_markdown_syntax(question)]
             for i, choice in enumerate(choices):
-                # Show number prefix for quick selection (1-9 for items 1-9, 0 for 10th item)
                 if i < 9:
                     num_prefix = str(i + 1)
                 elif i == 9:
@@ -20070,15 +20081,10 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     num_prefix = ' '
                 if multi_select:
                     cb = "[x]" if i in selected_indices else "[ ]"
-                    if i == selected and not cli_ref._clarify_freetext:
-                        prefix = f"❯ {cb} {num_prefix}. "
-                    else:
-                        prefix = f"  {cb} {num_prefix}. "
-                elif i == selected and not cli_ref._clarify_freetext:
-                    prefix = f"❯ {num_prefix}. "
+                    prefix = f"❯ {cb} {num_prefix}. " if (i == selected and not cli_ref._clarify_freetext) else f"  {cb} {num_prefix}. "
                 else:
-                    prefix = f"  {num_prefix}. "
-                preview_lines.extend(_wrap_panel_text(f"{prefix}{choice}", 60, subsequent_indent="    "))
+                    prefix = f"❯ {num_prefix}. " if (i == selected and not cli_ref._clarify_freetext) else f"  {num_prefix}. "
+                preview_lines.append(f"{prefix}{_strip_markdown_syntax(choice)}")
             # "Other" option in preview
             other_num = len(choices) + 1
             if other_num < 10:
@@ -20101,8 +20107,14 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     else f"❯ {other_num_prefix}. Other (type your answer)" if selected == len(choices)
                     else f"  {other_num_prefix}. Other (type your answer)"
                 )
-            preview_lines.extend(_wrap_panel_text(other_label, 60, subsequent_indent="    "))
+            preview_lines.append(other_label)
             box_width = _panel_box_width("Hermes needs your input", preview_lines)
+            # Debug: write to file directly (TUI captures stderr)
+            try:
+                with open("/tmp/clarify-debug.log", "a") as f:
+                    f.write(f"[clarify-debug] term_cols={term_cols} longest_preview={max(len(l) for l in preview_lines)} box_width={box_width}\n")
+            except Exception:
+                pass
             inner_text_width = max(8, box_width - 2)
 
             # Pre-wrap choices + Other option — these are mandatory.
@@ -20127,7 +20139,15 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         prefix = f'❯ {num_prefix}. '
                     else:
                         prefix = f'  {num_prefix}. '
-                    for wrapped in _wrap_panel_text(f"{prefix}{choice}", inner_text_width, subsequent_indent="    "):
+                    stripped = _strip_markdown_syntax(choice)
+                    # Indent continuation lines to align with the first line of the option text
+                    if "\n" in stripped:
+                        lines = stripped.split("\n")
+                        first_line = lines[0]
+                        rest = "\n".join(lines[1:])
+                        indented_rest = "\n".join("     " + line for line in rest.split("\n"))
+                        stripped = first_line + "\n" + indented_rest if indented_rest else first_line
+                    for wrapped in _wrap_panel_text(f"{prefix}{stripped}", inner_text_width, subsequent_indent="          "):
                         choice_wrapped.append((i, wrapped))
                 # Trailing Other row(s)
                 other_idx = len(choices)
@@ -20154,7 +20174,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         other_label_mand = f'❯ {other_num_prefix}. Other (type below)'
                     else:
                         other_label_mand = f'  {other_num_prefix}. Other (type your answer)'
-                other_wrapped = _wrap_panel_text(other_label_mand, inner_text_width, subsequent_indent="    ")
+                other_wrapped = _wrap_panel_text(other_label_mand, inner_text_width, subsequent_indent="          ")
             elif cli_ref._clarify_freetext:
                 # Freetext-only mode: the guidance line takes the place of choices.
                 other_wrapped = _wrap_panel_text(
@@ -20200,7 +20220,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             if choices_overflow:
                 max_question_rows = 0
 
-            question_wrapped = _wrap_panel_text(question, inner_text_width)
+            question_wrapped = _wrap_panel_text(_strip_markdown_syntax(question), inner_text_width)
             if max_question_rows <= 0:
                 question_wrapped = []
             elif len(question_wrapped) > max_question_rows:
@@ -20475,7 +20495,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             lines = []
             lines.append(('class:clarify-border', '╭─ '))
             lines.append(('class:clarify-title', title))
-            lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len(title) - 3)) + '╮\n'))
+            lines.append(('class:clarify-border', ' ' + ('─' * max(0, box_width - len(title) - 4)) + '╮\n'))
             _append_blank_panel_line(lines, 'class:clarify-border', box_width)
             _append_panel_line(lines, 'class:clarify-border', 'class:clarify-hint', hint, box_width)
             _append_blank_panel_line(lines, 'class:clarify-border', box_width)
@@ -20486,7 +20506,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 for wrapped in _wrap_panel_text(prefix + label, inner_text_width, subsequent_indent='    '):
                     _append_panel_line(lines, 'class:clarify-border', style, wrapped, box_width)
             _append_blank_panel_line(lines, 'class:clarify-border', box_width)
-            lines.append(('class:clarify-border', '╰' + ('─' * box_width) + '╯\n'))
+            lines.append(('class:clarify-border', '╰' + ('─' * (box_width - 2)) + '╯\n'))
             return lines
 
         command_palette_widget = ConditionalContainer(
