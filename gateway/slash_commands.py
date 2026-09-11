@@ -903,6 +903,28 @@ class GatewaySlashCommandsMixin(
         enable_session_yolo(session_key)
         return EphemeralReply(t("gateway.yolo.enabled"))
 
+    async def _handle_todos_command(self, event: MessageEvent) -> str:
+        """Handle /todos — list the agent's current todo items."""
+        from gateway.run import _AGENT_PENDING_SENTINEL
+
+        source = event.source
+        session_key = self._session_key_for_source(source)
+        agent = self._running_agents.get(session_key)
+        if agent is None or agent is _AGENT_PENDING_SENTINEL:
+            return "No todos set."
+        store = getattr(agent, "_todo_store", None) if agent else None
+        items = store.read() if store is not None else None
+        if not items:
+            return "No todos set."
+        lines = ["**Todos:**"]
+        for item in items:
+            icon = {"pending": "\U000003BC", "in_progress": "\u25D1", "completed": "\u2714"}.get(
+                item.get("status", ""), "?"
+            )
+            parent = f" (subtask of {item['parent']})" if item.get("parent") else ""
+            lines.append(f"{icon} [{item['status']}] {item['content']}{parent}")
+        return "\n".join(lines)
+
     async def _handle_verbose_command(self, event: MessageEvent) -> str:
         """Handle /verbose — cycle tool progress display mode (off → new → all → verbose → log) per
         *current platform*, saved to ``display.platforms.<platform>.tool_progress``. Gated by

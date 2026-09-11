@@ -199,6 +199,22 @@ class CLILoopsMixin:
         text = execute_command("egress", CommandContext(surface="cli")).text
         self._console_print(text, highlight=False, markup=False)
 
+    def _cmd_todos(self):
+        agent = getattr(self, "agent", None)
+        store = getattr(agent, "_todo_store", None) if agent else None
+        items = store.read() if store is not None else None
+        if not items:
+            self._console_print("  No todos set.")
+            return
+        lines = ["**Todos:**"]
+        for item in items:
+            icon = {"pending": "\U000003BC", "in_progress": "\u25D1", "completed": "\u2714"}.get(
+                item.get("status", ""), "?"
+            )
+            parent = f" (subtask of {item['parent']})" if item.get("parent") else ""
+            lines.append(f"{icon} [{item['status']}] {item['content']}{parent}")
+        self._console_print("\n".join(lines), highlight=False, markup=False)
+
     def _cmd_statusbar(self, cmd_original: str):
         self._status_bar_visible = not self._status_bar_visible
         self._console_print(f"  Status bar {'visible' if self._status_bar_visible else 'hidden'}")

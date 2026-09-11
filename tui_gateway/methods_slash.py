@@ -213,7 +213,24 @@ _LIVE_SLASH_OUTPUT = {
     "clear": (None, "Screen clear is terminal-only; desktop/TUI chat left unchanged."),
     "models": (None, "Use /model to view or switch the current model; desktop users can also open the model picker."),
     "rename": (None, "Use /title <name> to rename this session."),
-    "effort": (None, "Use /reasoning <effort> to change reasoning effort.")}
+    "effort": (None, "Use /reasoning <effort> to change reasoning effort."),
+    "todos": (_NO_AGENT, lambda sid, session, arg: _format_live_todos_output(session or {}))}
+
+
+def _format_live_todos_output(session: dict) -> str:
+    agent = session.get("agent")
+    store = getattr(agent, "_todo_store", None) if agent else None
+    items = store.read() if store is not None else None
+    if not items:
+        return "No todos set."
+    lines = ["Todos"]
+    for item in items:
+        icon = {"pending": "\U000003BC", "in_progress": "\u25D1", "completed": "\u2714"}.get(
+            item.get("status", ""), "?"
+        )
+        parent = f" (subtask of {item['parent']})" if item.get("parent") else ""
+        lines.append(f"{icon} [{item['status']}] {item['content']}{parent}")
+    return "\n".join(lines)
 
 
 def _live_slash_command_output(sid: str, session: Optional[dict], name: str, arg: str) -> Optional[str]:

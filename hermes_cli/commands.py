@@ -201,6 +201,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("diff", "Show git changes in the working directory", "Info",
                args_hint="[staged|all|session] [--stat] [path...]",
                subcommands=("staged", "all", "session")),
+    CommandDef("todos", "Show the agent's current todo list", "Info",
+               busy_policy="dispatch", desktop="terminal"),
     CommandDef("verbose", "Cycle tool progress display: off -> new -> all -> verbose",
                "Configuration", cli_only=True, gateway_config_gate="display.tool_progress_command",
                busy_policy="dispatch", desktop="terminal"),
