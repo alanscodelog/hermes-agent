@@ -57,7 +57,8 @@ async function loadPhrases(): Promise<NormalizedPhrases | null> {
   }
 
   return {
-    instructionsPrefix: typeof tp.instructions === 'string' && tp.instructions.length > 0 ? tp.instructions : TRIGGER_INSTRUCTIONS_PREFIX,
+    instructionsPrefix:
+      typeof tp.instructions === 'string' && tp.instructions.length > 0 ? tp.instructions : TRIGGER_INSTRUCTIONS_PREFIX,
     phrases: toRecord(tp.phrases),
     replacements: toRecord(tp.replacements)
   }
